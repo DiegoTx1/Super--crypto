@@ -1,0 +1,29 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>TX1 LITE REAL PRO v1.8.8 FINAL</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>TX1 LITE REAL PRO v1.8.8 FINAL</h1>
+  <p>Comando Atual: <span id="comando">ESPERAR</span></p>
+  <p>Score de Confiança: <span id="score">--%</span></p>
+  <p>Próxima Leitura em: <span id="proximaLeitura">60s</span></p>
+  <p>Última Análise: <span id="ultimaAnalise">--:--:--</span></p>
+
+  <h3>Critérios Técnicos</h3>
+  <ul id="criterios"></ul>
+
+  <button onclick="registrar('WIN')">WIN</button>
+  <button onclick="registrar('LOSS')">LOSS</button>
+  <p>Histórico: <span id="historico">0 WIN / 0 LOSS</span></p>
+
+  <h3>Gráfico</h3>
+  <iframe src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_12345&symbol=BINANCE:BTCUSDT&interval=1&hidesidetoolbar=1&hidetoptoolbar=1&symboledit=1&saveimage=1&toolbarbg=f1f3f6&studies=[]&theme=Dark&style=1&timezone=Etc/UTC&withdateranges=1&hidevolume=0&studies_overrides={}" 
+    width="100%" height="400" frameborder="0" allowtransparency="true" scrolling="no"></iframe>
+
+  <script src="script.js"></script>
+</body>
+</html>
