@@ -7,23 +7,34 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>TX1 LITE REAL PRO v1.8.8 FINAL</h1>
-  <p>Comando Atual: <span id="comando">ESPERAR</span></p>
-  <p>Score de Confiança: <span id="score">--%</span></p>
-  <p>Próxima Leitura em: <span id="proximaLeitura">60s</span></p>
-  <p>Última Análise: <span id="ultimaAnalise">--:--:--</span></p>
-
-  <h3>Critérios Técnicos</h3>
-  <ul id="criterios"></ul>
-
-  <button onclick="registrar('WIN')">WIN</button>
-  <button onclick="registrar('LOSS')">LOSS</button>
-  <p>Histórico: <span id="historico">0 WIN / 0 LOSS</span></p>
-
-  <h3>Gráfico</h3>
-  <iframe src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_12345&symbol=BINANCE:BTCUSDT&interval=1&hidesidetoolbar=1&hidetoptoolbar=1&symboledit=1&saveimage=1&toolbarbg=f1f3f6&studies=[]&theme=Dark&style=1&timezone=Etc/UTC&withdateranges=1&hidevolume=0&studies_overrides={}" 
-    width="100%" height="400" frameborder="0" allowtransparency="true" scrolling="no"></iframe>
-
+  <div class="container">
+    <h1>TX1 LITE REAL PRO v1.8.8 FINAL</h1>
+    <div class="painel-central">
+      <div class="coluna-esquerda">
+        <p>Comando Atual: <span id="comando">ESPERAR</span></p>
+        <p>Score de Confiança: <span id="score">--%</span></p>
+        <p>Próxima Leitura em: <span id="timer">60</span>s</p>
+        <p>Última Análise: <span id="hora">--:--:--</span></p>
+        <div>
+          <h3>Critérios Técnicos</h3>
+          <ul id="criterios"></ul>
+        </div>
+        <div>
+          <button onclick="registrar('WIN')">WIN</button>
+          <button onclick="registrar('LOSS')">LOSS</button>
+          <p>Histórico: <span id="historico">0 WIN / 0 LOSS</span></p>
+        </div>
+      </div>
+      <div class="coluna-direita">
+        <h3>Últimos Sinais</h3>
+        <ul id="ultimos"></ul>
+      </div>
+    </div>
+    <iframe class="grafico" src="https://s.tradingview.com/widgetembed/?symbol=BINANCE:BTCUSDT&interval=1&theme=dark"
+      width="100%" height="260" frameborder="0"></iframe>
+  </div>
+  <audio id="som-call" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg" preload="auto"></audio>
+  <audio id="som-put" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
   <script src="script.js"></script>
 </body>
 </html>
