@@ -79,8 +79,8 @@ async function leituraReal() {
     document.getElementById("ultimos").innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
 
     try {
-      if (comando === "CALL") document.getElementById("som-call").play();
-      if (comando === "PUT") document.getElementById("som-put").play();
+      if (comando === "CALL") await document.getElementById("som-call").play();
+      if (comando === "PUT") await document.getElementById("som-put").play();
     } catch (e) {
       console.warn("Erro ao reproduzir som:", e);
     }
@@ -91,7 +91,7 @@ async function leituraReal() {
 }
 
 // =============================================
-// INDICADORES TÉCNICOS CORRIGIDOS
+// INDICADORES TÉCNICOS
 // =============================================
 function calcularRSI(closes, periodo) {
   let gains = [], losses = [];
