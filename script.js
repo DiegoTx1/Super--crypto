@@ -29,10 +29,8 @@ function formatarTimer(segundos) {
 // =============================================
 // INDICADORES TÉCNICOS OTIMIZADOS
 // =============================================
-
-// RSI com média móvel exponencial
 function calcularRSI(closes, periodo) {
-  if (closes.length < periodo + 1) return 50; // Valor neutro se dados insuficientes
+  if (closes.length < periodo + 1) return 50;
 
   let gains = 0, losses = 0;
 
@@ -45,7 +43,6 @@ function calcularRSI(closes, periodo) {
   let avgGain = gains / periodo;
   let avgLoss = losses / periodo;
 
-  // suavização exponencial
   for (let i = periodo + 1; i < closes.length; i++) {
     const diff = closes[i] - closes[i - 1];
     const gain = diff > 0 ? diff : 0;
@@ -56,20 +53,16 @@ function calcularRSI(closes, periodo) {
   }
 
   if (avgLoss === 0) return 100;
-
   const rs = avgGain / avgLoss;
   return 100 - (100 / (1 + rs));
 }
 
-// Calcular toda série EMA e retornar array
 function calcularSerieEMA(dados, periodo) {
   const k = 2 / (periodo + 1);
   const emaArray = [];
-  // primeira EMA = média simples do período
   let soma = 0;
-  for (let i = 0; i < periodo; i++) {
-    soma += dados[i];
-  }
+
+  for (let i = 0; i < periodo; i++) soma += dados[i];
   emaArray[periodo - 1] = soma / periodo;
 
   for (let i = periodo; i < dados.length; i++) {
@@ -79,28 +72,25 @@ function calcularSerieEMA(dados, periodo) {
   return emaArray;
 }
 
-// SMA simples, já estava ok
 function calcularSMA(dados, periodo) {
   if (dados.length < periodo) return null;
   const slice = dados.slice(-periodo);
   return slice.reduce((a, b) => a + b, 0) / periodo;
 }
 
-// MACD otimizado com séries EMA
 function calcularMACD(closes, rapida, lenta, sinal) {
   const emaRapida = calcularSerieEMA(closes, rapida);
   const emaLenta = calcularSerieEMA(closes, lenta);
   const macdLinha = [];
 
-  for (let i = 0; i < closes.length; i++) {
-    if (emaRapida[i] === undefined || emaLenta[i] === undefined) {
-      macdLinha[i] = null;
-    } else {
-      macdLinha[i] = emaRapida[i] - emaLenta[i];
-    }
+  const inicio = Math.max(rapida, lenta);
+  for (let i = inicio; i < closes.length; i++) {
+    macdLinha[i] = emaRapida[i] - emaLenta[i];
   }
 
-  const sinalLinha = calcularSerieEMA(macdLinha.filter(v => v !== null), sinal);
+  const macdValidos = macdLinha.slice(inicio).filter(v => v !== null && v !== undefined);
+  const sinalLinha = calcularSerieEMA(macdValidos, sinal);
+
   const ultimoMACD = macdLinha[macdLinha.length - 1];
   const ultimoSinal = sinalLinha[sinalLinha.length - 1];
 
@@ -109,13 +99,10 @@ function calcularMACD(closes, rapida, lenta, sinal) {
   return { histograma };
 }
 
-// ADX completo com suavização
 function calcularADX(highs, lows, closes, periodo) {
   if (highs.length < periodo + 1) return 0;
 
-  const tr = [];
-  const plusDM = [];
-  const minusDM = [];
+  const tr = [], plusDM = [], minusDM = [];
 
   for (let i = 1; i < highs.length; i++) {
     const highDiff = highs[i] - highs[i - 1];
@@ -132,15 +119,12 @@ function calcularADX(highs, lows, closes, periodo) {
     tr.push(trueRange);
   }
 
-  // Suavização usando média móvel exponencial para TR, plusDM e minusDM
   function calcularEMAArray(dados, periodo) {
     const k = 2 / (periodo + 1);
     const emaArray = [];
     let soma = 0;
 
-    for (let i = 0; i < periodo; i++) {
-      soma += dados[i];
-    }
+    for (let i = 0; i < periodo; i++) soma += dados[i];
     emaArray[periodo - 1] = soma / periodo;
 
     for (let i = periodo; i < dados.length; i++) {
@@ -159,21 +143,18 @@ function calcularADX(highs, lows, closes, periodo) {
 
   const dx = plusDI.map((v, i) => {
     const sum = v + minusDI[i];
-    if (!sum) return 0;
-    return 100 * Math.abs(v - minusDI[i]) / sum;
+    return sum ? 100 * Math.abs(v - minusDI[i]) / sum : 0;
   });
 
   const adxArray = calcularEMAArray(dx, periodo);
-
   return adxArray[adxArray.length - 1] || 0;
 }
 
-// Fractais com cuidado nos limites
 function detectarFractais(highs, lows, periodo) {
   if (highs.length < periodo * 2 + 1) return { ultimo: null };
 
   const fractais = [];
-  for (let i = periodo; i < highs.length - periodo; i++) {
+  for (let i = periodo; i <= highs.length - periodo - 1; i++) {
     const janelaHigh = highs.slice(i - periodo, i + periodo + 1);
     const janelaLow = lows.slice(i - periodo, i + periodo + 1);
 
@@ -193,7 +174,7 @@ function detectarFractais(highs, lows, periodo) {
 let leituraEmAndamento = false;
 
 async function leituraReal() {
-  if (leituraEmAndamento) return; // evita sobreposição
+  if (leituraEmAndamento) return;
   leituraEmAndamento = true;
 
   try {
@@ -212,10 +193,8 @@ async function leituraReal() {
     const rsi = calcularRSI(closes, 14);
     const macd = calcularMACD(closes, 12, 26, 9);
     const sma9 = calcularSMA(closes, 9);
-    const ema21Array = calcularSerieEMA(closes, 21);
-    const ema50Array = calcularSerieEMA(closes, 50);
-    const ema21 = ema21Array[ema21Array.length - 1];
-    const ema50 = ema50Array[ema50Array.length - 1];
+    const ema21 = calcularSerieEMA(closes, 21).at(-1);
+    const ema50 = calcularSerieEMA(closes, 50).at(-1);
     const adx = calcularADX(highs, lows, closes, 14);
     const fractals = detectarFractais(highs, lows, 2);
 
@@ -248,8 +227,8 @@ async function leituraReal() {
     document.getElementById("ultimos").innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
 
     try {
-      if (comando === "CALL") await document.getElementById("som-call").play();
-      if (comando === "PUT") await document.getElementById("som-put").play();
+      if (comando === "CALL") await document.getElementById("som-call")?.play();
+      if (comando === "PUT") await document.getElementById("som-put")?.play();
     } catch (e) {
       console.warn("Erro ao reproduzir som:", e);
     }
@@ -264,7 +243,6 @@ async function leituraReal() {
 // =============================================
 // INICIALIZAÇÃO E TIMER
 // =============================================
-
 function iniciarTimer() {
   timer = 60;
   const interval = setInterval(() => {
@@ -284,14 +262,16 @@ setInterval(async () => {
   try {
     const response = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT");
     const dados = await response.json();
-    document.getElementById("criterios").querySelector("li:nth-child(4)").textContent =
-      `Preço: $${parseFloat(dados.lastPrice).toFixed(2)}`;
+    const precoLi = document.getElementById("criterios")?.querySelector("li:nth-child(4)");
+    if (precoLi) {
+      precoLi.textContent = `Preço: $${parseFloat(dados.lastPrice).toFixed(2)}`;
+    }
   } catch (e) {
     console.error("Erro ao atualizar preço:", e);
   }
 }, 5000);
 
-// Chamada inicial
+// Inicialização
 atualizarRelogio();
 leituraReal();
 iniciarTimer();
