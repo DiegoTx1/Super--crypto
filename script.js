@@ -41,11 +41,12 @@ function formatarTimer(segundos) {
 // INDICADORES TÉCNICOS
 // =============================================
 function calcularRSI(closes, periodo = 14) {
-  if (!Array.isArray(closes) || closes.length < periodo + 1) return 50;
+  if (!Array.isArray(closes) return 50;
+  if (closes.length < periodo + 1) return 50;
   
   let gains = 0, losses = 0;
   for (let i = 1; i <= periodo; i++) {
-    if (typeof closes[i-1] === 'undefined') continue;
+    if (i >= closes.length) break;
     const diff = closes[i] - closes[i - 1];
     if (diff > 0) gains += diff;
     else losses += Math.abs(diff);
@@ -69,6 +70,7 @@ function calcularRSI(closes, periodo = 14) {
 
 function calcularSerieEMA(dados, periodo) {
   if (!Array.isArray(dados) || dados.length < periodo) return [];
+  if (dados.some(isNaN)) return [];
   
   const k = 2 / (periodo + 1);
   const emaArray = [];
@@ -100,7 +102,7 @@ function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
     const emaRapida = calcularSerieEMA(closes, rapida);
     const emaLenta = calcularSerieEMA(closes, lenta);
     
-    if (!Array.isArray(emaRapida) || !Array.isArray(emaLenta)) {
+    if (!Array.isArray(emaRapida) || !Array.isArray(emaLenta) || emaRapida.length < 1 || emaLenta.length < 1) {
       return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
     }
 
@@ -108,6 +110,7 @@ function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
     const inicio = Math.max(rapida, lenta);
 
     for (let i = inicio; i < closes.length; i++) {
+      if (i >= emaRapida.length || i >= emaLenta.length) break;
       macdLinha[i] = emaRapida[i] - emaLenta[i];
     }
 
@@ -129,7 +132,9 @@ function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
 
 function calcularADX(highs, lows, closes, periodo = 14) {
   try {
-    if (!Array.isArray(highs) || highs.length < periodo * 2) return 0;
+    if (!Array.isArray(highs) || !Array.isArray(lows) || !Array.isArray(closes)) return 0;
+    if (highs.length !== lows.length || highs.length !== closes.length) return 0;
+    if (highs.length < periodo * 2) return 0;
 
     const trs = [], plusDMs = [], minusDMs = [];
     for (let i = 1; i < highs.length; i++) {
@@ -158,7 +163,8 @@ function calcularADX(highs, lows, closes, periodo = 14) {
       return sum ? 100 * Math.abs(pdi - minusDI[i]) / sum : 0;
     });
 
-    return calcularSerieEMA(dx, periodo).pop() || 0;
+    const adx = calcularSerieEMA(dx, periodo);
+    return adx.length > 0 ? adx[adx.length - 1] : 0;
   } catch (e) {
     console.error("Erro no cálculo ADX:", e);
     return 0;
@@ -167,7 +173,9 @@ function calcularADX(highs, lows, closes, periodo = 14) {
 
 function detectarFractais(highs, lows, periodo = 3) {
   try {
-    if (!Array.isArray(highs) || highs.length < periodo * 2 + 1) return null;
+    if (!Array.isArray(highs) || !Array.isArray(lows)) return null;
+    if (highs.length !== lows.length) return null;
+    if (highs.length < periodo * 2 + 1) return null;
 
     const fractais = [];
     for (let i = periodo; i < highs.length - periodo; i++) {
@@ -240,9 +248,9 @@ async function leituraReal() {
     const macd = calcularMACD(closes);
     const sma9 = calcularSMA(closes, 9);
     const ema21Array = calcularSerieEMA(closes, 21);
-    const ema21 = ema21Array[ema21Array.length - 1] || 0;
+    const ema21 = ema21Array.length > 0 ? ema21Array[ema21Array.length - 1] : 0;
     const ema50Array = calcularSerieEMA(closes, 50);
-    const ema50 = ema50Array[ema50Array.length - 1] || 0;
+    const ema50 = ema50Array.length > 0 ? ema50Array[ema50Array.length - 1] : 0;
     const adx = calcularADX(highs, lows, closes);
     const fractal = detectarFractais(highs, lows);
     const volumeMedia = calcularSMA(volumes, 20) || 0;
@@ -304,7 +312,7 @@ async function leituraReal() {
 
     // Atualiza histórico
     ultimos.unshift(`${ultimaAtualizacao} - ${comando} ($${close.toFixed(2)})`);
-    if (ultimos.length > 5) ultimos.pop();
+    ultimos = ultimos.slice(0, 5);
     
     const elementoUltimos = document.getElementById("ultimos");
     if (elementoUltimos) {
@@ -372,84 +380,4 @@ function iniciarTimer() {
 function iniciarAplicativo() {
   // Verifica ambiente
   if (typeof window === 'undefined' || typeof document === 'undefined') {
-    console.error("Ambiente de navegador não detectado");
-    return;
-  }
-
-  // Verifica API fetch
-  if (typeof fetch === 'undefined') {
-    console.error("API fetch não disponível");
-    return;
-  }
-
-  // Verifica elementos DOM
-  const elementosNecessarios = [
-    'hora', 'historico', 'comando', 
-    'score', 'criterios', 'ultimos', 'timer'
-  ];
-  
-  const elementosFaltando = elementosNecessarios
-    .map(id => ({ id, elemento: document.getElementById(id) }))
-    .filter(item => !item.elemento);
-  
-  if (elementosFaltando.length > 0) {
-    console.error("Elementos DOM faltando:", elementosFaltando.map(item => item.id));
-    return;
-  }
-
-  // Inicia os processos
-  try {
-    setInterval(atualizarRelogio, 1000);
-    iniciarTimer();
-    leituraReal();
-
-    // Atualização contínua do preço
-    setInterval(async () => {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        
-        const response = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT", {
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
-        
-        const dados = await response.json();
-        if (!dados || typeof dados.lastPrice === 'undefined') {
-          throw new Error("Dados de preço inválidos");
-        }
-
-        const preco = parseFloat(dados.lastPrice);
-        if (isNaN(preco)) throw new Error("Preço inválido");
-
-        const precoLi = document.getElementById("criterios")?.querySelector("li:nth-child(4)");
-        if (precoLi) {
-          precoLi.textContent = `Preço: $${preco.toFixed(2)}`;
-        }
-      } catch (e) {
-        console.error("Erro ao atualizar preço:", e);
-      }
-    }, 5000);
-
-  } catch (e) {
-    console.error("Erro na inicialização:", e);
-  }
-}
-
-// Inicia quando o DOM estiver pronto
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', iniciarAplicativo);
-} else {
-  iniciarAplicativo();
-}
-
-// Testes unitários básicos
-function testeUnidade() {
-  console.assert(calcularRSI([], 14) === 50, "RSI deve retornar 50 para array vazio");
-  console.assert(calcularSMA([1,2,3], 3) === 2, "SMA de [1,2,3] deve ser 2");
-  console.assert(formatarTimer(5) === "0:05", "Formatação de timer deve ter 2 dígitos");
-  console.assert(calcularMACD([]).histograma === 0, "MACD deve retornar 0 para array vazio");
-}
-testeUnidade();
+    console.error("
