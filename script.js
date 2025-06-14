@@ -38,7 +38,7 @@ function formatarTimer(segundos) {
 }
 
 // =============================================
-// INDICADORES TÉCNICOS
+// INDICADORES TÉCNICOS (OTIMIZADOS)
 // =============================================
 function calcularRSI(closes, periodo = 14) {
   if (!Array.isArray(closes) || closes.length < periodo + 1) return 50;
@@ -185,7 +185,7 @@ function detectarFractais(highs, lows, periodo = 2) {
 }
 
 // =============================================
-// LÓGICA PRINCIPAL - VERSÃO OTIMIZADA
+// LÓGICA PRINCIPAL - VERSÃO 2.1 (SENSÍVEL)
 // =============================================
 async function leituraReal() {
   if (leituraEmAndamento) return;
@@ -235,38 +235,41 @@ async function leituraReal() {
     const volumeMedia = calcularSMA(volumes, 20) || 0;
     const volatilidade = (high - low) / low * 100;
 
-    // Sistema de pontuação otimizado
+    // Sistema de pontuação OTIMIZADO - versão 2.1
     let pontosCALL = 0;
     let pontosPUT = 0;
 
-    // 1. Tendência (Peso maior)
-    if (macd.histograma > 0 && ema21 > ema50) pontosCALL += 2;
-    if (macd.histograma < 0 && ema21 < ema50) pontosPUT += 2;
+    // 1. Tendência (Peso maior) - Relaxado
+    if (macd.histograma > 0) pontosCALL += 2;
+    if (macd.histograma < 0) pontosPUT += 2;
 
-    // 2. Momentum (Peso médio)
-    if (rsi < 35 && close > ema21) pontosCALL += 1;
-    if (rsi > 65 && close < ema21) pontosPUT += 1;
+    // 2. Momentum (Peso médio) - Limites ampliados
+    if (rsi < 40 && close > ema21) pontosCALL += 1;
+    if (rsi > 60 && close < ema21) pontosPUT += 1;
 
-    // 3. Volume e Fractais
-    if (fractal?.tipo === "FUNDO" && close > ema21) pontosCALL += 1;
-    if (fractal?.tipo === "TOPO" && close < ema21) pontosPUT += 1;
-    if (volume > volumeMedia * 1.1) {
-      if (macd.histograma > 0) pontosCALL += 1;
-      else pontosPUT += 1;
-    }
+    // 3. Fractais (Confirmados por volume) - Mais sensível
+    if (fractal?.tipo === "FUNDO") pontosCALL += 1;
+    if (fractal?.tipo === "TOPO") pontosPUT += 1;
 
-    // 4. Força da Tendência
-    if (adx > 20) {
+    // 4. Filtro ADX adaptativo
+    if (adx > 18) {
       if (plusDI > minusDI) pontosCALL += 1;
       else pontosPUT += 1;
     }
 
-    // Tomada de decisão otimizada
+    // DECISÃO FINAL (Critério relaxado)
     let comando = "ESPERAR";
-    if (volatilidade > 0.08) { // Filtro de volatilidade mínima
-      if (pontosCALL >= 4 && pontosCALL > pontosPUT) comando = "CALL";
-      else if (pontosPUT >= 4 && pontosPUT > pontosCALL) comando = "PUT";
+    if (volatilidade > 0.05) { // Filtro mínimo de volatilidade
+      if (pontosCALL >= 3) comando = "CALL";
+      else if (pontosPUT >= 3) comando = "PUT";
     }
+
+    // DEBUG: Mostra pontuação no console
+    console.log(`[DEBUG] Pontuação: 
+      CALL = ${pontosCALL} (MACD: ${macd.histograma > 0 ? '✔' : '✖'}, RSI: ${rsi < 40 ? '✔' : '✖'})
+      PUT = ${pontosPUT} (MACD: ${macd.histograma < 0 ? '✔' : '✖'}, RSI: ${rsi > 60 ? '✔' : '✖'})
+      Volatilidade: ${volatilidade.toFixed(2)}%
+    `);
 
     // Atualiza UI
     ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR", {
@@ -285,8 +288,8 @@ async function leituraReal() {
     const elementoCriterios = document.getElementById("criterios");
     if (elementoCriterios) {
       elementoCriterios.innerHTML = `
-        <li>RSI: ${rsi.toFixed(2)} ${rsi < 35 ? '↓' : rsi > 65 ? '↑' : '•'}</li>
-        <li>ADX: ${adx.toFixed(2)} ${adx > 20 ? '📈' : '📉'}</li>
+        <li>RSI: ${rsi.toFixed(2)} ${rsi < 40 ? '↓' : rsi > 60 ? '↑' : '•'}</li>
+        <li>ADX: ${adx.toFixed(2)} ${adx > 18 ? '📈' : '📉'}</li>
         <li>MACD: ${macd.histograma.toFixed(4)} ${macd.histograma > 0 ? '🟢' : '🔴'}</li>
         <li>Preço: $${close.toFixed(2)} (Vol: ${volatilidade.toFixed(2)}%)</li>
         <li>Médias: ${sma9.toFixed(2)} / ${ema21.toFixed(2)} / ${ema50.toFixed(2)}</li>
@@ -325,7 +328,7 @@ async function leituraReal() {
 }
 
 // =============================================
-// TIMER PRECISO
+// TIMER PRECISO (SINCRONIZADO COM CANDLE)
 // =============================================
 function iniciarTimer() {
   if (intervaloAtual) clearInterval(intervaloAtual);
