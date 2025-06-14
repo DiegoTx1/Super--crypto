@@ -7,29 +7,23 @@ let timer = 60;
 let ultimaAtualizacao = "";
 let leituraEmAndamento = false;
 let intervaloAtual = null;
+let ultimoSinal = null;
 
 // =============================================
-// MONITOR DE SAÚDE (DIAGNÓSTICO)
+// VERIFICADOR DE CONEXÃO
 // =============================================
-async function verificarProblemas() {
+async function verificarConexao() {
   try {
-    const apiResponse = await fetch("https://api.binance.com/api/v3/ping");
-    console.log("✅ Conexão com Binance:", apiResponse.ok ? "OK" : "FALHA");
-    
-    const candleData = await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=2");
-    const candles = await candleData.json();
-    console.log("📊 Dados recebidos:", {
-      candles: candles.length,
-      últimoPreço: candles[0][4],
-      horário: new Date(candles[0][0]).toLocaleTimeString()
+    const response = await fetch('https://api.binance.com/api/v3/ping', {
+      cache: 'no-store'
     });
-    
-    const testRSI = calcularRSI([30,31,32,33,34,35,36,37,38,39,40,41,42,43,44]);
-    console.log("📈 Teste RSI:", testRSI > 30 && testRSI < 70 ? "OK" : "VALOR ESTRANHO");
-    
+    if (!response.ok) throw new Error("API indisponível");
+    console.log("✅ Conexão com Binance OK");
     return true;
   } catch (e) {
-    console.error("❌ Falha no diagnóstico:", e);
+    console.error("❌ Falha na conexão:", e);
+    // Tenta reconectar após 10 segundos
+    setTimeout(verificarConexao, 10000);
     return false;
   }
 }
@@ -49,18 +43,10 @@ function atualizarRelogio() {
   }
 }
 
-function registrar(tipo) {
-  if (tipo === 'WIN') win++;
-  else if (tipo === 'LOSS') loss++;
-  
-  const elementoHistorico = document.getElementById("historico");
-  if (elementoHistorico) {
-    elementoHistorico.textContent = `${win} WIN / ${loss} LOSS`;
-  }
-}
-
 function formatarTimer(segundos) {
-  return `0:${segundos.toString().padStart(2, '0')}`;
+  const mins = Math.floor(segundos / 60);
+  const secs = segundos % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
 // =============================================
@@ -111,11 +97,6 @@ function calcularSerieEMA(dados, periodo) {
   return emaArray;
 }
 
-function calcularSMA(dados, periodo) {
-  if (!Array.isArray(dados) || dados.length < periodo) return null;
-  return dados.slice(-periodo).reduce((a, b) => a + b, 0) / periodo;
-}
-
 function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
   try {
     if (!Array.isArray(closes) || closes.length < lenta + sinal) {
@@ -134,13 +115,10 @@ function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
 
     const sinalLinha = calcularSerieEMA(macdLinha.slice(inicio), sinal);
     
-    const ultimoMACD = macdLinha[macdLinha.length - 1] || 0;
-    const ultimoSinal = sinalLinha[sinalLinha.length - 1] || 0;
-    
     return {
-      histograma: ultimoMACD - ultimoSinal,
-      macdLinha: ultimoMACD,
-      sinalLinha: ultimoSinal
+      histograma: macdLinha[macdLinha.length - 1] - sinalLinha[sinalLinha.length - 1],
+      macdLinha: macdLinha[macdLinha.length - 1],
+      sinalLinha: sinalLinha[sinalLinha.length - 1]
     };
   } catch (e) {
     console.error("Erro no cálculo MACD:", e);
@@ -148,81 +126,21 @@ function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
   }
 }
 
-function calcularADX(highs, lows, closes, periodo = 14) {
-  try {
-    if (!Array.isArray(highs) || highs.length < periodo * 2) return { adx: 0, plusDI: 0, minusDI: 0 };
-
-    const trs = [], plusDMs = [], minusDMs = [];
-    for (let i = 1; i < highs.length; i++) {
-      const tr = Math.max(
-        highs[i] - lows[i],
-        Math.abs(highs[i] - closes[i - 1]),
-        Math.abs(lows[i] - closes[i - 1])
-      );
-      trs.push(tr);
-
-      const highDiff = highs[i] - highs[i - 1];
-      const lowDiff = lows[i - 1] - lows[i];
-      plusDMs.push(highDiff > lowDiff && highDiff > 0 ? highDiff : 0);
-      minusDMs.push(lowDiff > highDiff && lowDiff > 0 ? lowDiff : 0);
-    }
-
-    const trEMA = calcularSerieEMA(trs, periodo);
-    const plusDMEMA = calcularSerieEMA(plusDMs, periodo);
-    const minusDMEMA = calcularSerieEMA(minusDMs, periodo);
-
-    const plusDI = plusDMEMA.map((dm, i) => 100 * (dm / (trEMA[i] || 1)));
-    const minusDI = minusDMEMA.map((dm, i) => 100 * (dm / (trEMA[i] || 1)));
-
-    const dx = plusDI.map((pdi, i) => {
-      const sum = pdi + minusDI[i];
-      return sum ? 100 * Math.abs(pdi - minusDI[i]) / sum : 0;
-    });
-
-    const adx = calcularSerieEMA(dx, periodo).pop() || 0;
-    
-    return {
-      adx,
-      plusDI: plusDI[plusDI.length - 1] || 0,
-      minusDI: minusDI[minusDI.length - 1] || 0
-    };
-  } catch (e) {
-    console.error("Erro no cálculo ADX:", e);
-    return { adx: 0, plusDI: 0, minusDI: 0 };
-  }
-}
-
-function detectarFractais(highs, lows, periodo = 2) {
-  try {
-    if (!Array.isArray(highs) || highs.length < periodo * 2 + 1) return null;
-
-    const fractais = [];
-    for (let i = periodo; i < highs.length - periodo; i++) {
-      const highWindow = highs.slice(i - periodo, i + periodo + 1);
-      const lowWindow = lows.slice(i - periodo, i + periodo + 1);
-      if (highs[i] === Math.max(...highWindow)) fractais.push({ tipo: "TOPO", index: i });
-      else if (lows[i] === Math.min(...lowWindow)) fractais.push({ tipo: "FUNDO", index: i });
-    }
-    return fractais.length ? fractais[fractais.length - 1] : null;
-  } catch (e) {
-    console.error("Erro na detecção de fractais:", e);
-    return null;
-  }
-}
-
 // =============================================
-// LÓGICA PRINCIPAL - VERSÃO 2.2 (SENSÍVEL)
+// LÓGICA PRINCIPAL - VERSÃO 2.3 (ESTÁVEL)
 // =============================================
 async function leituraReal() {
   if (leituraEmAndamento) return;
   leituraEmAndamento = true;
 
   try {
+    const timestamp = Date.now();
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
-    const response = await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=100", {
-      signal: controller.signal
+    const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=100&timestamp=${timestamp}`, {
+      signal: controller.signal,
+      cache: 'no-store'
     });
     clearTimeout(timeoutId);
 
@@ -243,108 +161,55 @@ async function leituraReal() {
     const close = parseFloat(velaAtual[4]);
     const high = parseFloat(velaAtual[2]);
     const low = parseFloat(velaAtual[3]);
-    const volume = parseFloat(velaAtual[5]);
 
     const closes = dadosValidos.map(v => parseFloat(v[4]));
     const highs = dadosValidos.map(v => parseFloat(v[2]));
     const lows = dadosValidos.map(v => parseFloat(v[3]));
-    const volumes = dadosValidos.map(v => parseFloat(v[5]));
 
     // Calcula indicadores
     const rsi = calcularRSI(closes);
     const macd = calcularMACD(closes);
-    const sma9 = calcularSMA(closes, 9);
     const ema21 = calcularSerieEMA(closes, 21).pop() || 0;
-    const ema50 = calcularSerieEMA(closes, 50).pop() || 0;
-    const { adx, plusDI, minusDI } = calcularADX(highs, lows, closes);
+    const { adx } = calcularADX(highs, lows, closes);
     const fractal = detectarFractais(highs.slice(0, -1), lows.slice(0, -1));
-    const volumeMedia = calcularSMA(volumes, 20) || 0;
     const volatilidade = (high - low) / low * 100;
 
-    // Sistema de pontuação OTIMIZADO - versão 2.2
+    // Sistema de pontuação simplificado
     let pontosCALL = 0;
     let pontosPUT = 0;
 
-    // 1. Tendência (Peso maior) - Relaxado
+    // Regras básicas
     if (macd.histograma > 0) pontosCALL += 1;
     if (macd.histograma < 0) pontosPUT += 1;
+    
+    if (rsi < 40) pontosCALL += 1;
+    if (rsi > 60) pontosPUT += 1;
 
-    // 2. Momentum (Peso médio) - Limites ampliados
-    if (rsi < 45) pontosCALL += 1;
-    if (rsi > 55) pontosPUT += 1;
+    if (close > ema21) pontosCALL += 1;
+    if (close < ema21) pontosPUT += 1;
 
-    // 3. Fractais (Confirmados por volume) - Mais sensível
-    if (fractal?.tipo === "FUNDO") pontosCALL += 1;
-    if (fractal?.tipo === "TOPO") pontosPUT += 1;
-
-    // DECISÃO FINAL (Critério relaxado)
+    // Decisão final
     let comando = "ESPERAR";
-    if (volatilidade > 0.05) { // Filtro mínimo de volatilidade
-      if (pontosCALL >= 2) comando = "CALL";
-      else if (pontosPUT >= 2) comando = "PUT";
+    if (pontosCALL >= 2 && pontosCALL > pontosPUT && volatilidade > 0.08) {
+      comando = "CALL";
+    } else if (pontosPUT >= 2 && pontosPUT > pontosCALL && volatilidade > 0.08) {
+      comando = "PUT";
     }
 
-    // DEBUG: Mostra pontuação no console
-    console.log(`[${new Date().toLocaleTimeString()}] Pontuação: 
-      CALL = ${pontosCALL} (MACD: ${macd.histograma > 0 ? '✔' : '✖'}, RSI: ${rsi < 45 ? '✔' : '✖'})
-      PUT = ${pontosPUT} (MACD: ${macd.histograma < 0 ? '✔' : '✖'}, RSI: ${rsi > 55 ? '✔' : '✖'})
-      Volatilidade: ${volatilidade.toFixed(2)}%
-    `);
-
-    // Notificações
-    if (comando === "CALL" || comando === "PUT") {
-      // Notificação no navegador
-      if (Notification.permission === "granted") {
-        new Notification(`SINAL ${comando}`, { 
-          body: `BTC: $${close.toFixed(2)} (${new Date().toLocaleTimeString()})`,
-          icon: comando === "CALL" ? 'https://i.imgur.com/upG7aIk.png' : 'https://i.imgur.com/DmG0pWQ.png'
-        });
-      }
-
-      // Alerta sonoro
-      const audio = new Audio(comando === "CALL" 
-        ? 'https://assets.mixkit.co/sfx/preview/mixkit-alarm-digital-clock-beep-989.mp3' 
-        : 'https://assets.mixkit.co/sfx/preview/mixkit-ominous-drums-227.mp3');
-      audio.play().catch(e => console.log("Ative o áudio manualmente!"));
-
-      // Log colorido no console
-      console.log(`%c${comando} em $${close.toFixed(2)}`, 
-        `color: white; background: ${comando === "CALL" ? "green" : "red"}; font-size: 14px; padding: 4px;`);
-    }
-
-    // Atualiza UI
-    ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR", {
-      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    // Atualiza interface
+    atualizarInterface(comando, {
+      close,
+      rsi,
+      macd: macd.histograma,
+      adx,
+      volatilidade,
+      ema21
     });
 
-    const elementoComando = document.getElementById("comando");
-    if (elementoComando) elementoComando.textContent = comando;
-    
-    const elementoScore = document.getElementById("score");
-    if (elementoScore) elementoScore.textContent = `RSI: ${rsi.toFixed(2)} | ADX: ${adx.toFixed(2)} | MACD: ${macd.histograma.toFixed(4)}`;
-    
-    const elementoHora = document.getElementById("hora");
-    if (elementoHora) elementoHora.textContent = ultimaAtualizacao;
-
-    const elementoCriterios = document.getElementById("criterios");
-    if (elementoCriterios) {
-      elementoCriterios.innerHTML = `
-        <li>RSI: ${rsi.toFixed(2)} ${rsi < 45 ? '↓' : rsi > 55 ? '↑' : '•'}</li>
-        <li>ADX: ${adx.toFixed(2)} ${adx > 20 ? '📈' : '📉'}</li>
-        <li>MACD: ${macd.histograma.toFixed(4)} ${macd.histograma > 0 ? '🟢' : '🔴'}</li>
-        <li>Preço: $${close.toFixed(2)} (Vol: ${volatilidade.toFixed(2)}%)</li>
-        <li>Médias: ${sma9.toFixed(2)} / ${ema21.toFixed(2)} / ${ema50.toFixed(2)}</li>
-        <li>Fractal: ${fractal?.tipo || "—"} ${fractal?.tipo ? (fractal.tipo === "TOPO" ? '🔻' : '🔺') : ''}</li>
-      `;
-    }
-
-    // Atualiza histórico
-    ultimos.unshift(`${ultimaAtualizacao} - ${comando} ($${close.toFixed(2)})`);
-    if (ultimos.length > 5) ultimos.pop();
-    
-    const elementoUltimos = document.getElementById("ultimos");
-    if (elementoUltimos) {
-      elementoUltimos.innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
+    // Notifica apenas sinais novos
+    if (comando !== "ESPERAR" && comando !== ultimoSinal) {
+      enviarNotificacao(comando, close);
+      ultimoSinal = comando;
     }
 
   } catch (e) {
@@ -355,29 +220,65 @@ async function leituraReal() {
 }
 
 // =============================================
-// TIMER PRECISO (SINCRONIZADO COM CANDLE)
+// FUNÇÕES AUXILIARES
+// =============================================
+function atualizarInterface(comando, dados) {
+  ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR");
+  
+  document.getElementById("comando").textContent = comando;
+  document.getElementById("score").textContent = 
+    `RSI: ${dados.rsi.toFixed(2)} | MACD: ${dados.macd.toFixed(4)}`;
+  
+  document.getElementById("criterios").innerHTML = `
+    <li>Preço: $${dados.close.toFixed(2)}</li>
+    <li>Volatilidade: ${dados.volatilidade.toFixed(2)}%</li>
+    <li>EMA21: $${dados.ema21.toFixed(2)}</li>
+    <li>RSI: ${dados.rsi.toFixed(2)}</li>
+    <li>ADX: ${dados.adx.toFixed(2)}</li>
+  `;
+
+  // Atualiza histórico
+  ultimos.unshift(`${ultimaAtualizacao} - ${comando} ($${dados.close.toFixed(2)})`);
+  if (ultimos.length > 5) ultimos.pop();
+  document.getElementById("ultimos").innerHTML = 
+    ultimos.map(i => `<li>${i}</li>`).join("");
+}
+
+function enviarNotificacao(comando, preco) {
+  // Notificação no navegador
+  if (Notification.permission === "granted") {
+    new Notification(`SINAL ${comando}`, {
+      body: `BTC: $${preco.toFixed(2)} - ${new Date().toLocaleTimeString()}`,
+      icon: comando === "CALL" ? 'call-icon.png' : 'put-icon.png'
+    });
+  }
+
+  // Alerta sonoro
+  const audio = new Audio(comando === "CALL" 
+    ? 'call-sound.mp3' 
+    : 'put-sound.mp3');
+  audio.play().catch(e => console.log("Permita áudio para alertas"));
+}
+
+// =============================================
+// TIMER PRECISO (ATUALIZADO)
 // =============================================
 function iniciarTimer() {
   if (intervaloAtual) clearInterval(intervaloAtual);
 
   const agora = Date.now();
   const delayProximaVela = 60000 - (agora % 60000);
-  timer = Math.max(1, Math.floor(delayProximaVela / 1000));
+  timer = Math.floor(delayProximaVela / 1000);
 
-  const elementoTimer = document.getElementById("timer");
-  if (elementoTimer) {
-    elementoTimer.textContent = formatarTimer(timer);
-    elementoTimer.style.color = timer <= 5 ? 'red' : '';
-  }
+  // Garante mínimo de 1 segundo
+  if (timer <= 0) timer = 1;
+
+  document.getElementById("timer").textContent = formatarTimer(timer);
 
   intervaloAtual = setInterval(() => {
-    timer = Math.max(0, timer - 1);
+    timer--;
+    document.getElementById("timer").textContent = formatarTimer(timer);
     
-    if (elementoTimer) {
-      elementoTimer.textContent = formatarTimer(timer);
-      elementoTimer.style.color = timer <= 5 ? 'red' : '';
-    }
-
     if (timer <= 0) {
       clearInterval(intervaloAtual);
       leituraReal().finally(() => iniciarTimer());
@@ -386,55 +287,45 @@ function iniciarTimer() {
 }
 
 // =============================================
-// INICIALIZAÇÃO
+// INICIALIZAÇÃO ROBUSTA
 // =============================================
-function iniciarAplicativo() {
-  // Verifica ambiente
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    console.error("Ambiente de navegador não detectado");
+async function iniciarAplicativo() {
+  // Verifica elementos DOM
+  const elementosNecessarios = ['hora', 'comando', 'score', 'criterios', 'ultimos', 'timer'];
+  if (elementosNecessarios.some(id => !document.getElementById(id))) {
+    console.error("Elementos da interface não encontrados");
     return;
   }
 
-  // Verifica elementos DOM
-  const elementosNecessarios = ['hora', 'historico', 'comando', 'score', 'criterios', 'ultimos', 'timer'];
-  for (const id of elementosNecessarios) {
-    if (!document.getElementById(id)) {
-      console.error(`Elemento não encontrado: #${id}`);
-      return;
-    }
+  // Configura notificações
+  if (Notification.permission !== "granted") {
+    Notification.requestPermission();
   }
 
-  // Ativa notificações
-  Notification.requestPermission().then(perm => {
-    if (perm === "granted") console.log("🔔 Notificações ativadas!");
-  });
+  // Verifica conexão
+  if (!await verificarConexao()) return;
 
   // Inicia processos
-  verificarProblemas();
   setInterval(atualizarRelogio, 1000);
   iniciarTimer();
   leituraReal();
 
-  // Atualização contínua do preço
+  // Atualização de preço em tempo real
   setInterval(async () => {
     try {
-      const response = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT");
-      if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
-      
-      const dados = await response.json();
-      const precoLi = document.getElementById("criterios")?.querySelector("li:nth-child(4)");
-      if (precoLi && dados.lastPrice) {
-        precoLi.textContent = `Preço: $${parseFloat(dados.lastPrice).toFixed(2)}`;
-      }
+      const response = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT');
+      const data = await response.json();
+      document.querySelector("#criterios li:first-child").textContent = 
+        `Preço: $${parseFloat(data.price).toFixed(2)}`;
     } catch (e) {
       console.error("Erro ao atualizar preço:", e);
     }
   }, 5000);
 }
 
-// Inicia quando o DOM estiver pronto
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', iniciarAplicativo);
-} else {
+// Inicialização segura
+if (document.readyState === 'complete') {
   iniciarAplicativo();
+} else {
+  window.addEventListener('load', iniciarAplicativo);
 }
