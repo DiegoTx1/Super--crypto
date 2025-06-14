@@ -8,6 +8,14 @@ let ultimaAtualizacao = "";
 let leituraEmAndamento = false;
 let intervaloAtual = null;
 
+// Endpoints de fallback para a API
+const API_ENDPOINTS = [
+  "https://api.binance.com/api/v3/klines",
+  "https://api1.binance.com/api/v3/klines",
+  "https://api2.binance.com/api/v3/klines",
+  "https://api3.binance.com/api/v3/klines"
+];
+
 // =============================================
 // FUNÇÕES BÁSICAS
 // =============================================
@@ -38,14 +46,14 @@ function formatarTimer(segundos) {
 }
 
 // =============================================
-// INDICADORES TÉCNICOS
+// INDICADORES TÉCNICOS (OTIMIZADOS)
 // =============================================
 function calcularRSI(closes, periodo = 14) {
   if (!Array.isArray(closes) || closes.length < periodo + 1) return 50;
   
   let gains = 0, losses = 0;
   for (let i = 1; i <= periodo; i++) {
-    if (typeof closes[i-1] === 'undefined') continue;
+    if (closes[i] === undefined || closes[i-1] === undefined) continue;
     const diff = closes[i] - closes[i - 1];
     if (diff > 0) gains += diff;
     else losses += Math.abs(diff);
@@ -71,7 +79,7 @@ function calcularSerieEMA(dados, periodo) {
   if (!Array.isArray(dados) || dados.length < periodo) return [];
   
   const k = 2 / (periodo + 1);
-  const emaArray = [];
+  const emaArray = new Array(dados.length);
   let soma = 0;
   
   for (let i = 0; i < periodo; i++) {
@@ -184,27 +192,51 @@ function detectarFractais(highs, lows, periodo = 3) {
 }
 
 // =============================================
-// LÓGICA PRINCIPAL
+// SISTEMA DE FALLBACK PARA API
+// =============================================
+async function fetchComFallback(endpoint, params, tentativa = 0) {
+  try {
+    const url = `${API_ENDPOINTS[tentativa]}?${new URLSearchParams(params)}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'Cache-Control': 'no-cache' }
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
+    
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      throw new Error("Resposta não é JSON");
+    }
+    
+    return await response.json();
+  } catch (e) {
+    console.warn(`Falha no endpoint ${API_ENDPOINTS[tentativa]}:`, e.message);
+    
+    if (tentativa < API_ENDPOINTS.length - 1) {
+      return fetchComFallback(endpoint, params, tentativa + 1);
+    }
+    throw new Error("Todos os endpoints falharam");
+  }
+}
+
+// =============================================
+// LÓGICA PRINCIPAL (COM MELHORIAS)
 // =============================================
 async function leituraReal() {
   if (leituraEmAndamento) return;
   leituraEmAndamento = true;
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-    const response = await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=100", {
-      signal: controller.signal
+    const dados = await fetchComFallback("/api/v3/klines", {
+      symbol: "BTCUSDT",
+      interval: "1m",
+      limit: "100"
     });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
-    
-    const dados = await response.json();
-    if (!Array.isArray(dados) || dados.length < 50) {
-      throw new Error("Dados insuficientes");
-    }
 
     // Filtra candles inválidos
     const dadosValidos = dados.filter(v => 
@@ -327,6 +359,9 @@ async function leituraReal() {
 
   } catch (e) {
     console.error("Erro na leitura:", e);
+    const elementoComando = document.getElementById("comando");
+    if (elementoComando) elementoComando.textContent = "ERRO";
+    
     setTimeout(leituraReal, 10000);
   } finally {
     leituraEmAndamento = false;
@@ -334,7 +369,7 @@ async function leituraReal() {
 }
 
 // =============================================
-// TIMER PRECISO
+// TIMER PRECISO (MELHORADO)
 // =============================================
 function iniciarTimer() {
   if (intervaloAtual) {
@@ -356,7 +391,7 @@ function iniciarTimer() {
     
     if (elementoTimer) {
       elementoTimer.textContent = formatarTimer(timer);
-      if (timer <= 5) elementoTimer.style.color = 'red';
+      elementoTimer.style.color = timer <= 5 ? 'red' : '';
     }
 
     if (timer <= 0) {
@@ -367,7 +402,7 @@ function iniciarTimer() {
 }
 
 // =============================================
-// INICIALIZAÇÃO
+// INICIALIZAÇÃO (COM VERIFICAÇÕES ADICIONAIS)
 // =============================================
 function iniciarAplicativo() {
   // Verifica ambiente
@@ -406,17 +441,10 @@ function iniciarAplicativo() {
     // Atualização contínua do preço
     setInterval(async () => {
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        
-        const response = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT", {
-          signal: controller.signal
+        const dados = await fetchComFallback("/api/v3/ticker/24hr", {
+          symbol: "BTCUSDT"
         });
-        clearTimeout(timeoutId);
-
-        if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
         
-        const dados = await response.json();
         if (!dados || typeof dados.lastPrice === 'undefined') {
           throw new Error("Dados de preço inválidos");
         }
