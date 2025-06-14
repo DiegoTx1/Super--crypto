@@ -1,4 +1,4 @@
-//=============================================
+// =============================================
 // CONFIGURAÇÕES GLOBAIS
 // =============================================
 let win = 0, loss = 0;
@@ -38,13 +38,14 @@ function formatarTimer(segundos) {
 }
 
 // =============================================
-// INDICADORES TÉCNICOS (OTIMIZADOS)
+// INDICADORES TÉCNICOS
 // =============================================
 function calcularRSI(closes, periodo = 14) {
   if (!Array.isArray(closes) || closes.length < periodo + 1) return 50;
   
   let gains = 0, losses = 0;
   for (let i = 1; i <= periodo; i++) {
+    if (typeof closes[i-1] === 'undefined') continue;
     const diff = closes[i] - closes[i - 1];
     if (diff > 0) gains += diff;
     else losses += Math.abs(diff);
@@ -99,6 +100,10 @@ function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
     const emaRapida = calcularSerieEMA(closes, rapida);
     const emaLenta = calcularSerieEMA(closes, lenta);
     
+    if (!Array.isArray(emaRapida) || !Array.isArray(emaLenta)) {
+      return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
+    }
+
     const macdLinha = [];
     const inicio = Math.max(rapida, lenta);
 
@@ -124,7 +129,7 @@ function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
 
 function calcularADX(highs, lows, closes, periodo = 14) {
   try {
-    if (!Array.isArray(highs) || highs.length < periodo * 2) return { adx: 0, plusDI: 0, minusDI: 0 };
+    if (!Array.isArray(highs) || highs.length < periodo * 2) return 0;
 
     const trs = [], plusDMs = [], minusDMs = [];
     for (let i = 1; i < highs.length; i++) {
@@ -153,20 +158,14 @@ function calcularADX(highs, lows, closes, periodo = 14) {
       return sum ? 100 * Math.abs(pdi - minusDI[i]) / sum : 0;
     });
 
-    const adx = calcularSerieEMA(dx, periodo).pop() || 0;
-    
-    return {
-      adx,
-      plusDI: plusDI[plusDI.length - 1] || 0,
-      minusDI: minusDI[minusDI.length - 1] || 0
-    };
+    return calcularSerieEMA(dx, periodo).pop() || 0;
   } catch (e) {
     console.error("Erro no cálculo ADX:", e);
-    return { adx: 0, plusDI: 0, minusDI: 0 };
+    return 0;
   }
 }
 
-function detectarFractais(highs, lows, periodo = 2) {
+function detectarFractais(highs, lows, periodo = 3) {
   try {
     if (!Array.isArray(highs) || highs.length < periodo * 2 + 1) return null;
 
@@ -185,7 +184,7 @@ function detectarFractais(highs, lows, periodo = 2) {
 }
 
 // =============================================
-// LÓGICA PRINCIPAL - VERSÃO 2.1 (SENSÍVEL)
+// LÓGICA PRINCIPAL
 // =============================================
 async function leituraReal() {
   if (leituraEmAndamento) return;
@@ -207,17 +206,29 @@ async function leituraReal() {
       throw new Error("Dados insuficientes");
     }
 
+    // Filtra candles inválidos
     const dadosValidos = dados.filter(v => 
-      Array.isArray(v) && v.length >= 6 && !isNaN(parseFloat(v[4]))
+      Array.isArray(v) && 
+      v.length >= 6 && 
+      !isNaN(parseFloat(v[4])) && 
+      !isNaN(parseFloat(v[2])) && 
+      !isNaN(parseFloat(v[3]))
     );
 
-    if (dadosValidos.length < 50) throw new Error("Dados insuficientes após filtragem");
+    if (dadosValidos.length < 50) {
+      throw new Error("Dados históricos insuficientes após filtragem");
+    }
 
     const velaAtual = dadosValidos[dadosValidos.length - 1];
     const close = parseFloat(velaAtual[4]);
     const high = parseFloat(velaAtual[2]);
     const low = parseFloat(velaAtual[3]);
     const volume = parseFloat(velaAtual[5]);
+
+    if (isNaN(close)) throw new Error("Preço de fechamento inválido");
+    if (isNaN(high)) throw new Error("Preço máximo inválido");
+    if (isNaN(low)) throw new Error("Preço mínimo inválido");
+    if (isNaN(volume)) throw new Error("Volume inválido");
 
     const closes = dadosValidos.map(v => parseFloat(v[4]));
     const highs = dadosValidos.map(v => parseFloat(v[2]));
@@ -228,59 +239,53 @@ async function leituraReal() {
     const rsi = calcularRSI(closes);
     const macd = calcularMACD(closes);
     const sma9 = calcularSMA(closes, 9);
-    const ema21 = calcularSerieEMA(closes, 21).pop() || 0;
-    const ema50 = calcularSerieEMA(closes, 50).pop() || 0;
-    const { adx, plusDI, minusDI } = calcularADX(highs, lows, closes);
-    const fractal = detectarFractais(highs.slice(0, -1), lows.slice(0, -1));
+    const ema21Array = calcularSerieEMA(closes, 21);
+    const ema21 = ema21Array[ema21Array.length - 1] || 0;
+    const ema50Array = calcularSerieEMA(closes, 50);
+    const ema50 = ema50Array[ema50Array.length - 1] || 0;
+    const adx = calcularADX(highs, lows, closes);
+    const fractal = detectarFractais(highs, lows);
     const volumeMedia = calcularSMA(volumes, 20) || 0;
-    const volatilidade = (high - low) / low * 100;
 
-    // Sistema de pontuação OTIMIZADO - versão 2.1
+    // Sistema de pontuação
     let pontosCALL = 0;
     let pontosPUT = 0;
 
-    // 1. Tendência (Peso maior) - Relaxado
-    if (macd.histograma > 0) pontosCALL += 2;
-    if (macd.histograma < 0) pontosPUT += 2;
+    // Regras de entrada
+    if (rsi < 30 && close > ema21) pontosCALL += 2;
+    if (rsi > 70 && close < ema21) pontosPUT += 2;
 
-    // 2. Momentum (Peso médio) - Limites ampliados
-    if (rsi < 40 && close > ema21) pontosCALL += 1;
-    if (rsi > 60 && close < ema21) pontosPUT += 1;
+    if (macd.histograma > 0 && macd.macdLinha > macd.sinalLinha) pontosCALL += 2;
+    if (macd.histograma < 0 && macd.macdLinha < macd.sinalLinha) pontosPUT += 2;
 
-    // 3. Fractais (Confirmados por volume) - Mais sensível
-    if (fractal?.tipo === "FUNDO") pontosCALL += 1;
-    if (fractal?.tipo === "TOPO") pontosPUT += 1;
+    if (sma9 > ema21 && ema21 > ema50) pontosCALL += 1;
+    if (sma9 < ema21 && ema21 < ema50) pontosPUT += 1;
 
-    // 4. Filtro ADX adaptativo
-    if (adx > 18) {
-      if (plusDI > minusDI) pontosCALL += 1;
+    if (fractal?.tipo === "FUNDO" && volume > volumeMedia * 1.2) pontosCALL += 1;
+    if (fractal?.tipo === "TOPO" && volume > volumeMedia * 1.2) pontosPUT += 1;
+
+    if (adx > 25) {
+      if (macd.macdLinha > macd.sinalLinha) pontosCALL += 1;
       else pontosPUT += 1;
     }
 
-    // DECISÃO FINAL (Critério relaxado)
+    // Tomada de decisão
     let comando = "ESPERAR";
-    if (volatilidade > 0.05) { // Filtro mínimo de volatilidade
-      if (pontosCALL >= 3) comando = "CALL";
-      else if (pontosPUT >= 3) comando = "PUT";
-    }
-
-    // DEBUG: Mostra pontuação no console
-    console.log(`[DEBUG] Pontuação: 
-      CALL = ${pontosCALL} (MACD: ${macd.histograma > 0 ? '✔' : '✖'}, RSI: ${rsi < 40 ? '✔' : '✖'})
-      PUT = ${pontosPUT} (MACD: ${macd.histograma < 0 ? '✔' : '✖'}, RSI: ${rsi > 60 ? '✔' : '✖'})
-      Volatilidade: ${volatilidade.toFixed(2)}%
-    `);
+    if (pontosCALL >= 5 && pontosCALL >= pontosPUT + 2) comando = "CALL";
+    else if (pontosPUT >= 5 && pontosPUT >= pontosCALL + 2) comando = "PUT";
 
     // Atualiza UI
     ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR", {
-      hour: '2-digit', minute: '2-digit', second: '2-digit'
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit'
     });
 
     const elementoComando = document.getElementById("comando");
     if (elementoComando) elementoComando.textContent = comando;
     
     const elementoScore = document.getElementById("score");
-    if (elementoScore) elementoScore.textContent = `RSI: ${rsi.toFixed(2)} | ADX: ${adx.toFixed(2)} | MACD: ${macd.histograma.toFixed(4)}`;
+    if (elementoScore) elementoScore.textContent = `RSI: ${rsi.toFixed(2)} | ADX: ${adx.toFixed(2)}`;
     
     const elementoHora = document.getElementById("hora");
     if (elementoHora) elementoHora.textContent = ultimaAtualizacao;
@@ -288,11 +293,11 @@ async function leituraReal() {
     const elementoCriterios = document.getElementById("criterios");
     if (elementoCriterios) {
       elementoCriterios.innerHTML = `
-        <li>RSI: ${rsi.toFixed(2)} ${rsi < 40 ? '↓' : rsi > 60 ? '↑' : '•'}</li>
-        <li>ADX: ${adx.toFixed(2)} ${adx > 18 ? '📈' : '📉'}</li>
+        <li>RSI: ${rsi.toFixed(2)} (${rsi < 30 ? '↓' : rsi > 70 ? '↑' : '•'})</li>
+        <li>ADX: ${adx.toFixed(2)} ${adx > 25 ? '📈' : ''}</li>
         <li>MACD: ${macd.histograma.toFixed(4)} ${macd.histograma > 0 ? '🟢' : '🔴'}</li>
-        <li>Preço: $${close.toFixed(2)} (Vol: ${volatilidade.toFixed(2)}%)</li>
-        <li>Médias: ${sma9.toFixed(2)} / ${ema21.toFixed(2)} / ${ema50.toFixed(2)}</li>
+        <li>Preço: $${close.toFixed(2)}</li>
+        <li>Médias: ${sma9?.toFixed(2) || 'N/A'} / ${ema21?.toFixed(2) || 'N/A'} / ${ema50?.toFixed(2) || 'N/A'}</li>
         <li>Fractal: ${fractal?.tipo || "—"} ${fractal?.tipo ? (fractal.tipo === "TOPO" ? '🔻' : '🔺') : ''}</li>
       `;
     }
@@ -322,16 +327,19 @@ async function leituraReal() {
 
   } catch (e) {
     console.error("Erro na leitura:", e);
+    setTimeout(leituraReal, 10000);
   } finally {
     leituraEmAndamento = false;
   }
 }
 
 // =============================================
-// TIMER PRECISO (SINCRONIZADO COM CANDLE)
+// TIMER PRECISO
 // =============================================
 function iniciarTimer() {
-  if (intervaloAtual) clearInterval(intervaloAtual);
+  if (intervaloAtual) {
+    clearInterval(intervaloAtual);
+  }
 
   const agora = Date.now();
   const delayProximaVela = 60000 - (agora % 60000);
@@ -348,7 +356,7 @@ function iniciarTimer() {
     
     if (elementoTimer) {
       elementoTimer.textContent = formatarTimer(timer);
-      elementoTimer.style.color = timer <= 5 ? 'red' : '';
+      if (timer <= 5) elementoTimer.style.color = 'red';
     }
 
     if (timer <= 0) {
@@ -368,35 +376,66 @@ function iniciarAplicativo() {
     return;
   }
 
-  // Verifica elementos DOM
-  const elementosNecessarios = ['hora', 'historico', 'comando', 'score', 'criterios', 'ultimos', 'timer'];
-  for (const id of elementosNecessarios) {
-    if (!document.getElementById(id)) {
-      console.error(`Elemento não encontrado: #${id}`);
-      return;
-    }
+  // Verifica API fetch
+  if (typeof fetch === 'undefined') {
+    console.error("API fetch não disponível");
+    return;
   }
 
-  // Inicia processos
-  setInterval(atualizarRelogio, 1000);
-  iniciarTimer();
-  leituraReal();
+  // Verifica elementos DOM
+  const elementosNecessarios = [
+    'hora', 'historico', 'comando', 
+    'score', 'criterios', 'ultimos', 'timer'
+  ];
+  
+  const elementosFaltando = elementosNecessarios
+    .map(id => ({ id, elemento: document.getElementById(id) }))
+    .filter(item => !item.elemento);
+  
+  if (elementosFaltando.length > 0) {
+    console.error("Elementos DOM faltando:", elementosFaltando.map(item => item.id));
+    return;
+  }
 
-  // Atualização contínua do preço
-  setInterval(async () => {
-    try {
-      const response = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT");
-      if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
-      
-      const dados = await response.json();
-      const precoLi = document.getElementById("criterios")?.querySelector("li:nth-child(4)");
-      if (precoLi && dados.lastPrice) {
-        precoLi.textContent = `Preço: $${parseFloat(dados.lastPrice).toFixed(2)}`;
+  // Inicia os processos
+  try {
+    setInterval(atualizarRelogio, 1000);
+    iniciarTimer();
+    leituraReal();
+
+    // Atualização contínua do preço
+    setInterval(async () => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT", {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
+        
+        const dados = await response.json();
+        if (!dados || typeof dados.lastPrice === 'undefined') {
+          throw new Error("Dados de preço inválidos");
+        }
+
+        const preco = parseFloat(dados.lastPrice);
+        if (isNaN(preco)) throw new Error("Preço inválido");
+
+        const precoLi = document.getElementById("criterios")?.querySelector("li:nth-child(4)");
+        if (precoLi) {
+          precoLi.textContent = `Preço: $${preco.toFixed(2)}`;
+        }
+      } catch (e) {
+        console.error("Erro ao atualizar preço:", e);
       }
-    } catch (e) {
-      console.error("Erro ao atualizar preço:", e);
-    }
-  }, 5000);
+    }, 5000);
+
+  } catch (e) {
+    console.error("Erro na inicialização:", e);
+  }
 }
 
 // Inicia quando o DOM estiver pronto
@@ -405,3 +444,12 @@ if (document.readyState === 'loading') {
 } else {
   iniciarAplicativo();
 }
+
+// Testes unitários básicos
+function testeUnidade() {
+  console.assert(calcularRSI([], 14) === 50, "RSI deve retornar 50 para array vazio");
+  console.assert(calcularSMA([1,2,3], 3) === 2, "SMA de [1,2,3] deve ser 2");
+  console.assert(formatarTimer(5) === "0:05", "Formatação de timer deve ter 2 dígitos");
+  console.assert(calcularMACD([]).histograma === 0, "MACD deve retornar 0 para array vazio");
+}
+testeUnidade();
