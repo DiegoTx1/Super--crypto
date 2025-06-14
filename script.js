@@ -32,16 +32,6 @@ function atualizarRelogio() {
   }
 }
 
-function registrar(tipo) {
-  if (tipo === 'WIN') win++;
-  else if (tipo === 'LOSS') loss++;
-  
-  const elementoHistorico = document.getElementById("historico");
-  if (elementoHistorico) {
-    elementoHistorico.textContent = `${win} WIN / ${loss} LOSS`;
-  }
-}
-
 function formatarTimer(segundos) {
   return `0:${segundos.toString().padStart(2, '0')}`;
 }
@@ -136,110 +126,126 @@ function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
 }
 
 // =============================================
-// SISTEMA DE FALLBACK PARA API
+// SISTEMA DE SCORE DE CONFIÂNCIA (0-100%)
 // =============================================
-async function fetchDados(tentativa = 0) {
-  try {
-    const endpoint = API_ENDPOINTS[tentativa];
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
-    // Busca dados das velas
-    const responseKlines = await fetch(`${endpoint}/klines?symbol=BTCUSDT&interval=1m&limit=100`, {
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
+function calcularScoreConfianca(indicadores) {
+  let score = 50; // Base 50%
 
-    if (!responseKlines.ok) throw new Error(`Erro HTTP: ${responseKlines.status}`);
-    
-    const dados = await responseKlines.json();
-    if (!Array.isArray(dados) || dados.length < 50) {
-      throw new Error("Dados insuficientes");
-    }
-
-    return dados;
-  } catch (e) {
-    console.warn(`Falha no endpoint ${API_ENDPOINTS[tentativa]}:`, e.message);
-    
-    if (tentativa < API_ENDPOINTS.length - 1) {
-      return fetchDados(tentativa + 1);
-    }
-    throw new Error("Todos os endpoints falharam");
+  // RSI (0-20 pontos)
+  if (indicadores.rsi < 30 || indicadores.rsi > 70) {
+    score += 20;
+  } else if (indicadores.rsi < 35 || indicadores.rsi > 65) {
+    score += 10;
   }
+
+  // MACD (0-20 pontos)
+  if (Math.abs(indicadores.macd.histograma) > 0.5) {
+    score += 20;
+  } else if (Math.abs(indicadores.macd.histograma) > 0.2) {
+    score += 10;
+  }
+
+  // Tendência (0-20 pontos)
+  if (indicadores.close > indicadores.ema21 && indicadores.ema21 > indicadores.ema50) {
+    score += 20;
+  } else if (indicadores.close < indicadores.ema21 && indicadores.ema21 < indicadores.ema50) {
+    score += 20;
+  }
+
+  // Volume (0-10 pontos)
+  if (indicadores.volume > indicadores.volumeMedia * 1.5) {
+    score += 10;
+  }
+
+  // Garantir que está entre 0-100%
+  return Math.min(100, Math.max(0, score));
 }
 
 // =============================================
-// LÓGICA PRINCIPAL COM TRATAMENTO DE ERRO MELHORADO
+// LÓGICA PRINCIPAL COM CRITÉRIOS COMPLETOS
 // =============================================
 async function leituraReal() {
   if (leituraEmAndamento) return;
   leituraEmAndamento = true;
 
   try {
-    const dados = await fetchDados();
-    tentativasErro = 0; // Resetar contador de erros
+    const endpoint = API_ENDPOINTS[0]; // Pode implementar fallback aqui
+    const response = await fetch(`${endpoint}/klines?symbol=BTCUSDT&interval=1m&limit=100`);
+    const dados = await response.json();
 
-    const dadosValidos = dados.filter(v => 
-      Array.isArray(v) && 
-      v.length >= 6 && 
-      !isNaN(parseFloat(v[4]))
-    );
-
-    if (dadosValidos.length < 50) {
-      throw new Error("Dados históricos insuficientes");
-    }
+    const dadosValidos = dados.filter(v => Array.isArray(v) && v.length >= 6);
+    if (dadosValidos.length < 50) throw new Error("Dados insuficientes");
 
     const velaAtual = dadosValidos[dadosValidos.length - 1];
     const close = parseFloat(velaAtual[4]);
+    const high = parseFloat(velaAtual[2]);
+    const low = parseFloat(velaAtual[3]);
+    const volume = parseFloat(velaAtual[5]);
 
     const closes = dadosValidos.map(v => parseFloat(v[4]));
+    const highs = dadosValidos.map(v => parseFloat(v[2]));
+    const lows = dadosValidos.map(v => parseFloat(v[3]));
+    const volumes = dadosValidos.map(v => parseFloat(v[5]));
+
+    // Calcula todos os indicadores
     const rsi = calcularRSI(closes);
     const macd = calcularMACD(closes);
+    const sma9 = calcularSMA(closes, 9);
     const ema21 = calcularSerieEMA(closes, 21).pop() || 0;
+    const ema50 = calcularSerieEMA(closes, 50).pop() || 0;
+    const volumeMedia = calcularSMA(volumes, 20) || 0;
 
-    // Sistema de pontuação simplificado
+    // Calcula score de confiança
+    const scoreConfianca = calcularScoreConfianca({
+      rsi, macd, close, ema21, ema50, volume, volumeMedia
+    });
+
+    // Sistema de pontuação para entrada
     let pontosCALL = 0, pontosPUT = 0;
     if (rsi < 30 && close > ema21) pontosCALL += 2;
     if (rsi > 70 && close < ema21) pontosPUT += 2;
     if (macd.histograma > 0) pontosCALL += 1;
     if (macd.histograma < 0) pontosPUT += 1;
+    if (close > sma9 && sma9 > ema21) pontosCALL += 1;
+    if (close < sma9 && sma9 < ema21) pontosPUT += 1;
 
     let comando = "ESPERAR";
-    if (pontosCALL >= 2) comando = "CALL";
-    else if (pontosPUT >= 2) comando = "PUT";
+    if (pontosCALL >= 3 && scoreConfianca >= 60) comando = "CALL";
+    else if (pontosPUT >= 3 && scoreConfianca >= 60) comando = "PUT";
 
-    // Atualiza UI
+    // Atualiza a interface
     ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR");
     document.getElementById("comando").textContent = comando;
-    document.getElementById("score").textContent = `RSI: ${rsi.toFixed(2)}`;
+    document.getElementById("score").textContent = `Confiança: ${scoreConfianca}%`;
     document.getElementById("hora").textContent = ultimaAtualizacao;
 
+    // Atualiza os critérios técnicos
+    document.getElementById("criterios").innerHTML = `
+      <li>RSI: ${rsi.toFixed(2)} ${rsi < 30 ? '🔻' : rsi > 70 ? '🔺' : ''}</li>
+      <li>MACD: ${macd.histograma.toFixed(4)} ${macd.histograma > 0 ? '🟢' : '🔴'}</li>
+      <li>Preço: $${close.toFixed(2)}</li>
+      <li>Médias: SMA9 ${sma9?.toFixed(2) || 'N/A'} | EMA21 ${ema21.toFixed(2)} | EMA50 ${ema50.toFixed(2)}</li>
+      <li>Volume: ${volume.toFixed(2)} vs Média ${volumeMedia.toFixed(2)}</li>
+      <li>Tendência: ${close > ema21 ? 'Alta' : 'Baixa'}</li>
+    `;
+
     // Atualiza histórico
-    ultimos.unshift(`${ultimaAtualizacao} - ${comando} ($${close.toFixed(2)})`);
+    ultimos.unshift(`${ultimaAtualizacao} - ${comando} (${scoreConfianca}%)`);
     if (ultimos.length > 5) ultimos.pop();
     document.getElementById("ultimos").innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
 
   } catch (e) {
     console.error("Erro na leitura:", e);
-    tentativasErro++;
-    
     document.getElementById("comando").textContent = "ERRO";
-    document.getElementById("timer").textContent = "0:00";
-    
-    // Tentar reconectar com backoff exponencial
-    const delay = Math.min(10000 * Math.pow(2, tentativasErro), 60000);
-    setTimeout(() => {
-      leituraEmAndamento = false;
-      leituraReal();
-      iniciarTimer();
-    }, delay);
+    document.getElementById("score").textContent = "Confiança: 0%";
+    setTimeout(() => leituraReal(), 10000);
   } finally {
     leituraEmAndamento = false;
   }
 }
 
 // =============================================
-// TIMER RESILIENTE
+// TIMER E INICIALIZAÇÃO (MANTIDOS IGUAIS)
 // =============================================
 function iniciarTimer() {
   clearInterval(intervaloAtual);
@@ -264,27 +270,20 @@ function iniciarTimer() {
   }, 1000);
 }
 
-// =============================================
-// INICIALIZAÇÃO
-// =============================================
 function iniciarAplicativo() {
-  // Verificações iniciais
-  if (typeof fetch === 'undefined') {
-    alert("Seu navegador não suporta fetch API");
-    return;
-  }
-
-  // Inicia processos
   setInterval(atualizarRelogio, 1000);
   iniciarTimer();
   leituraReal();
 
-  // Atualização contínua do preço
+  // Atualização do preço em tempo real
   setInterval(async () => {
     try {
       const response = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT");
       const dados = await response.json();
-      document.querySelector("#criterios li:nth-child(4)").textContent = `Preço: $${parseFloat(dados.lastPrice).toFixed(2)}`;
+      const precoElement = document.querySelector("#criterios li:nth-child(3)");
+      if (precoElement) {
+        precoElement.textContent = `Preço: $${parseFloat(dados.lastPrice).toFixed(2)}`;
+      }
     } catch (e) {
       console.error("Erro ao atualizar preço:", e);
     }
