@@ -1,468 +1,517 @@
 // =============================================
-// CONFIGURAÇÕES GLOBAIS
+// MÓDULOS PRINCIPAIS
 // =============================================
-let win = 0, loss = 0;
-let ultimos = [];
-let timer = 60;
-let ultimaAtualizacao = "";
-let leituraEmAndamento = false;
-let intervaloAtual = null;
 
-// Configurações de Análise
-const ANALISE_CONFIG = {
-  RSI_OVERBOUGHT: 70,
-  RSI_OVERSOLD: 30,
-  ADX_FORCA_MINIMA: 25,
-  VOLUME_MULTIPLIER: 1.3,
-  PONTUACAO_MINIMA: 4,
-  DIFERENCA_MINIMA: 2
-};
+class TechnicalIndicators {
+  static rsi(closes, periodo = 14) {
+    if (!Array.isArray(closes) return 50;
+    if (closes.length < periodo + 1) return 50;
 
-// =============================================
-// FUNÇÕES BÁSICAS (MANTIDAS)
-// =============================================
-function atualizarRelogio() {
-  const agora = new Date();
-  const elementoHora = document.getElementById("hora");
-  if (elementoHora) {
-    elementoHora.textContent = agora.toLocaleTimeString("pt-BR", {
-      hour: '2-digit', 
-      minute: '2-digit', 
-      second: '2-digit'
-    });
-  }
-}
-
-function registrar(tipo) {
-  if (tipo === 'WIN') win++;
-  else if (tipo === 'LOSS') loss++;
-  
-  const elementoHistorico = document.getElementById("historico");
-  if (elementoHistorico) {
-    elementoHistorico.textContent = `${win} WIN / ${loss} LOSS`;
-  }
-}
-
-function formatarTimer(segundos) {
-  return `0:${segundos.toString().padStart(2, '0')}`;
-}
-
-// =============================================
-// INDICADORES TÉCNICOS (MANTIDOS)
-// =============================================
-function calcularRSI(closes, periodo = 14) {
-  if (!Array.isArray(closes) || closes.length < periodo + 1) return 50;
-  
-  let gains = 0, losses = 0;
-  for (let i = 1; i <= periodo; i++) {
-    if (typeof closes[i-1] === 'undefined') continue;
-    const diff = closes[i] - closes[i - 1];
-    if (diff > 0) gains += diff;
-    else losses += Math.abs(diff);
-  }
-
-  let avgGain = gains / periodo;
-  let avgLoss = losses / periodo || 0.001;
-
-  for (let i = periodo + 1; i < closes.length; i++) {
-    const diff = closes[i] - closes[i - 1];
-    const gain = diff > 0 ? diff : 0;
-    const loss = diff < 0 ? Math.abs(diff) : 0;
-    avgGain = (avgGain * (periodo - 1) + gain) / periodo;
-    avgLoss = (avgLoss * (periodo - 1) + loss) / periodo;
-  }
-
-  if (avgLoss <= 0.001) return 100;
-  const rs = avgGain / avgLoss;
-  return 100 - (100 / (1 + rs));
-}
-
-function calcularSerieEMA(dados, periodo) {
-  if (!Array.isArray(dados) || dados.length < periodo) return [];
-  
-  const k = 2 / (periodo + 1);
-  const emaArray = [];
-  let soma = 0;
-  
-  for (let i = 0; i < periodo; i++) {
-    soma += dados[i];
-  }
-  emaArray[periodo - 1] = soma / periodo;
-
-  for (let i = periodo; i < dados.length; i++) {
-    emaArray[i] = dados[i] * k + emaArray[i - 1] * (1 - k);
-  }
-  
-  return emaArray;
-}
-
-function calcularSMA(dados, periodo) {
-  if (!Array.isArray(dados) || dados.length < periodo) return null;
-  return dados.slice(-periodo).reduce((a, b) => a + b, 0) / periodo;
-}
-
-function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
-  try {
-    if (!Array.isArray(closes) || closes.length < lenta + sinal) {
-      return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
+    let gains = 0, losses = 0;
+    for (let i = 1; i <= periodo; i++) {
+      const diff = closes[i] - closes[i - 1];
+      if (diff > 0) gains += diff;
+      else losses += Math.abs(diff);
     }
 
-    const emaRapida = calcularSerieEMA(closes, rapida);
-    const emaLenta = calcularSerieEMA(closes, lenta);
-    
-    if (!Array.isArray(emaRapida) || !Array.isArray(emaLenta)) {
-      return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
+    let avgGain = gains / periodo;
+    let avgLoss = losses / periodo || 0.001;
+
+    for (let i = periodo + 1; i < closes.length; i++) {
+      const diff = closes[i] - closes[i - 1];
+      const gain = diff > 0 ? diff : 0;
+      const loss = diff < 0 ? Math.abs(diff) : 0;
+      avgGain = (avgGain * (periodo - 1) + gain) / periodo;
+      avgLoss = (avgLoss * (periodo - 1) + loss) / periodo;
     }
 
-    const macdLinha = [];
-    const inicio = Math.max(rapida, lenta);
+    if (avgLoss <= 0.001) return 100;
+    const rs = avgGain / avgLoss;
+    return 100 - (100 / (1 + rs));
+  }
 
-    for (let i = inicio; i < closes.length; i++) {
-      macdLinha[i] = emaRapida[i] - emaLenta[i];
+  static ema(values, periodo, smoothing = 2) {
+    if (!Array.isArray(values) return [];
+    if (values.length < periodo) return [];
+
+    const k = smoothing / (periodo + 1);
+    const ema = [values.slice(0, periodo).reduce((a, b) => a + b, 0) / periodo];
+
+    for (let i = periodo; i < values.length; i++) {
+      ema.push(values[i] * k + ema[ema.length - 1] * (1 - k));
     }
 
-    const sinalLinha = calcularSerieEMA(macdLinha.slice(inicio), sinal);
-    
-    const ultimoMACD = macdLinha[macdLinha.length - 1] || 0;
-    const ultimoSinal = sinalLinha[sinalLinha.length - 1] || 0;
-    
-    return {
-      histograma: ultimoMACD - ultimoSinal,
-      macdLinha: ultimoMACD,
-      sinalLinha: ultimoSinal
-    };
-  } catch (e) {
-    console.error("Erro no cálculo MACD:", e);
-    return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
+    return ema;
+  }
+
+  static macd(closes, rapida = 12, lenta = 26, sinal = 9) {
+    try {
+      if (!Array.isArray(closes) return { histograma: 0, macd: 0, signal: 0 };
+      if (closes.length < lenta + sinal) return { histograma: 0, macd: 0, signal: 0 };
+
+      const ema12 = this.ema(closes, rapida);
+      const ema26 = this.ema(closes, lenta);
+      
+      if (!ema12 || !ema26) return { histograma: 0, macd: 0, signal: 0 };
+
+      const macdLine = [];
+      const start = Math.max(rapida, lenta);
+
+      for (let i = start; i < closes.length; i++) {
+        macdLine.push(ema12[i] - ema26[i]);
+      }
+
+      const signalLine = this.ema(macdLine, sinal);
+      
+      const lastMACD = macdLine[macdLine.length - 1] || 0;
+      const lastSignal = signalLine[signalLine.length - 1] || 0;
+      
+      return {
+        histograma: lastMACD - lastSignal,
+        macd: lastMACD,
+        signal: lastSignal
+      };
+    } catch (e) {
+      console.error("MACD calculation error:", e);
+      return { histograma: 0, macd: 0, signal: 0 };
+    }
+  }
+
+  static sma(values, periodo) {
+    if (!Array.isArray(values)) return null;
+    if (values.length < periodo) return null;
+    return values.slice(-periodo).reduce((a, b) => a + b, 0) / periodo;
+  }
+
+  static adx(highs, lows, closes, periodo = 14) {
+    try {
+      if (!Array.isArray(highs) || highs.length < periodo * 2) return 0;
+
+      const trs = [], plusDMs = [], minusDMs = [];
+      for (let i = 1; i < highs.length; i++) {
+        const tr = Math.max(
+          highs[i] - lows[i],
+          Math.abs(highs[i] - closes[i - 1]),
+          Math.abs(lows[i] - closes[i - 1])
+        );
+        trs.push(tr);
+
+        const highDiff = highs[i] - highs[i - 1];
+        const lowDiff = lows[i - 1] - lows[i];
+        plusDMs.push(highDiff > lowDiff && highDiff > 0 ? highDiff : 0);
+        minusDMs.push(lowDiff > highDiff && lowDiff > 0 ? lowDiff : 0);
+      }
+
+      const atr = this.ema(trs, periodo);
+      const plusDI = this.ema(plusDMs, periodo).map((val, i) => 100 * val / (atr[i] || 1));
+      const minusDI = this.ema(minusDMs, periodo).map((val, i) => 100 * val / (atr[i] || 1));
+
+      const dx = plusDI.map((val, i) => {
+        const sum = val + minusDI[i];
+        return sum ? 100 * Math.abs(val - minusDI[i]) / sum : 0;
+      });
+
+      return this.ema(dx, periodo).pop() || 0;
+    } catch (e) {
+      console.error("ADX calculation error:", e);
+      return 0;
+    }
+  }
+
+  static fractal(highs, lows, periodo = 3) {
+    try {
+      if (!Array.isArray(highs) return null;
+      if (highs.length < periodo * 2 + 1) return null;
+
+      for (let i = periodo; i < highs.length - periodo; i++) {
+        const highWindow = highs.slice(i - periodo, i + periodo + 1);
+        const lowWindow = lows.slice(i - periodo, i + periodo + 1);
+        
+        if (highs[i] === Math.max(...highWindow)) {
+          return { type: "TOP", index: i, confirmed: i <= highs.length - 2 };
+        }
+        if (lows[i] === Math.min(...lowWindow)) {
+          return { type: "BOTTOM", index: i, confirmed: i <= highs.length - 2 };
+        }
+      }
+      return null;
+    } catch (e) {
+      console.error("Fractal detection error:", e);
+      return null;
+    }
+  }
+
+  static atr(highs, lows, closes, periodo = 14) {
+    try {
+      if (!Array.isArray(highs)) return 0;
+      
+      const trs = [];
+      for (let i = 1; i < highs.length; i++) {
+        trs.push(Math.max(
+          highs[i] - lows[i],
+          Math.abs(highs[i] - closes[i - 1]),
+          Math.abs(lows[i] - closes[i - 1])
+        ));
+      }
+      
+      return this.sma(trs, periodo) || 0;
+    } catch (e) {
+      console.error("ATR calculation error:", e);
+      return 0;
+    }
   }
 }
 
-function calcularADX(highs, lows, closes, periodo = 14) {
-  try {
-    if (!Array.isArray(highs) || highs.length < periodo * 2) return 0;
-
-    const trs = [], plusDMs = [], minusDMs = [];
-    for (let i = 1; i < highs.length; i++) {
-      const tr = Math.max(
-        highs[i] - lows[i],
-        Math.abs(highs[i] - closes[i - 1]),
-        Math.abs(lows[i] - closes[i - 1])
-      );
-      trs.push(tr);
-
-      const highDiff = highs[i] - highs[i - 1];
-      const lowDiff = lows[i - 1] - lows[i];
-      plusDMs.push(highDiff > lowDiff && highDiff > 0 ? highDiff : 0);
-      minusDMs.push(lowDiff > highDiff && lowDiff > 0 ? lowDiff : 0);
-    }
-
-    const trEMA = calcularSerieEMA(trs, periodo);
-    const plusDMEMA = calcularSerieEMA(plusDMs, periodo);
-    const minusDMEMA = calcularSerieEMA(minusDMs, periodo);
-
-    const plusDI = plusDMEMA.map((dm, i) => 100 * (dm / (trEMA[i] || 1)));
-    const minusDI = minusDMEMA.map((dm, i) => 100 * (dm / (trEMA[i] || 1)));
-
-    const dx = plusDI.map((pdi, i) => {
-      const sum = pdi + minusDI[i];
-      return sum ? 100 * Math.abs(pdi - minusDI[i]) / sum : 0;
-    });
-
-    return calcularSerieEMA(dx, periodo).pop() || 0;
-  } catch (e) {
-    console.error("Erro no cálculo ADX:", e);
-    return 0;
+class TradingEngine {
+  constructor() {
+    this.wins = 0;
+    this.losses = 0;
+    this.history = [];
+    this.lastUpdate = "";
+    this.isProcessing = false;
+    this.currentInterval = null;
+    this.timer = 60;
+    this.apiRetryCount = 0;
+    this.maxRetries = 5;
   }
-}
 
-function detectarFractais(highs, lows, periodo = 3) {
-  try {
-    if (!Array.isArray(highs) || highs.length < periodo * 2 + 1) return null;
+  async fetchMarketData() {
+    if (this.isProcessing) return;
+    this.isProcessing = true;
 
-    const fractais = [];
-    for (let i = periodo; i < highs.length - periodo; i++) {
-      const highWindow = highs.slice(i - periodo, i + periodo + 1);
-      const lowWindow = lows.slice(i - periodo, i + periodo + 1);
-      if (highs[i] === Math.max(...highWindow)) fractais.push({ tipo: "TOPO", index: i });
-      else if (lows[i] === Math.min(...lowWindow)) fractais.push({ tipo: "FUNDO", index: i });
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+
+      const response = await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=100", {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeout);
+      this.apiRetryCount = 0;
+
+      if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+
+      const data = await response.json();
+      if (!Array.isArray(data)) throw new Error("Invalid response format");
+
+      return data
+        .filter(item => Array.isArray(item) && item.length >= 6)
+        .map(item => ({
+          time: item[0],
+          open: parseFloat(item[1]),
+          high: parseFloat(item[2]),
+          low: parseFloat(item[3]),
+          close: parseFloat(item[4]),
+          volume: parseFloat(item[5])
+        }));
+    } catch (error) {
+      console.error("API Error:", error);
+      this.apiRetryCount++;
+      
+      if (this.apiRetryCount <= this.maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, this.apiRetryCount), 30000);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.fetchMarketData();
+      }
+      
+      throw new Error("Max retries reached");
+    } finally {
+      this.isProcessing = false;
     }
-    return fractais.length ? fractais[fractais.length - 1] : null;
-  } catch (e) {
-    console.error("Erro na detecção de fractais:", e);
-    return null;
   }
-}
 
-// =============================================
-// LÓGICA PRINCIPAL (PARTE MODIFICADA)
-// =============================================
-async function leituraReal() {
-  if (leituraEmAndamento) return;
-  leituraEmAndamento = true;
+  analyzeData(data) {
+    if (!data || data.length < 50) return null;
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-    const response = await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=100", {
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
-    
-    const dados = await response.json();
-    if (!Array.isArray(dados) || dados.length < 50) {
-      throw new Error("Dados insuficientes");
-    }
-
-    // Filtra candles inválidos
-    const dadosValidos = dados.filter(v => 
-      Array.isArray(v) && 
-      v.length >= 6 && 
-      !isNaN(parseFloat(v[4])) && 
-      !isNaN(parseFloat(v[2])) && 
-      !isNaN(parseFloat(v[3]))
-    );
-
-    if (dadosValidos.length < 50) {
-      throw new Error("Dados históricos insuficientes após filtragem");
-    }
-
-    const velaAtual = dadosValidos[dadosValidos.length - 1];
-    const close = parseFloat(velaAtual[4]);
-    const high = parseFloat(velaAtual[2]);
-    const low = parseFloat(velaAtual[3]);
-    const volume = parseFloat(velaAtual[5]);
-
-    if (isNaN(close)) throw new Error("Preço de fechamento inválido");
-    if (isNaN(high)) throw new Error("Preço máximo inválido");
-    if (isNaN(low)) throw new Error("Preço mínimo inválido");
-    if (isNaN(volume)) throw new Error("Volume inválido");
-
-    const closes = dadosValidos.map(v => parseFloat(v[4]));
-    const highs = dadosValidos.map(v => parseFloat(v[2]));
-    const lows = dadosValidos.map(v => parseFloat(v[3]));
-    const volumes = dadosValidos.map(v => parseFloat(v[5]));
+    const closes = data.map(d => d.close);
+    const highs = data.map(d => d.high);
+    const lows = data.map(d => d.low);
+    const volumes = data.map(d => d.volume);
+    const currentPrice = closes[closes.length - 1];
 
     // Calcula indicadores
-    const rsi = calcularRSI(closes);
-    const macd = calcularMACD(closes);
-    const sma9 = calcularSMA(closes, 9);
-    const ema21Array = calcularSerieEMA(closes, 21);
-    const ema21 = ema21Array[ema21Array.length - 1] || 0;
-    const ema50Array = calcularSerieEMA(closes, 50);
-    const ema50 = ema50Array[ema50Array.length - 1] || 0;
-    const adx = calcularADX(highs, lows, closes);
-    const fractal = detectarFractais(highs, lows);
-    const volumeMedia = calcularSMA(volumes, 20) || 0;
+    const rsi = TechnicalIndicators.rsi(closes);
+    const macd = TechnicalIndicators.macd(closes);
+    const sma9 = TechnicalIndicators.sma(closes, 9);
+    const ema21 = TechnicalIndicators.ema(closes, 21).pop() || 0;
+    const ema50 = TechnicalIndicators.ema(closes, 50).pop() || 0;
+    const adx = TechnicalIndicators.adx(highs, lows, closes);
+    const fractal = TechnicalIndicators.fractal(highs, lows);
+    const avgVolume = TechnicalIndicators.sma(volumes, 20) || 0;
+    const atr = TechnicalIndicators.atr(highs, lows, closes);
 
-    // Sistema de pontuação MODIFICADO
-    let pontosCALL = 0;
-    let pontosPUT = 0;
+    // Sistema de pontuação
+    let callScore = 0;
+    let putScore = 0;
 
-    // 1. RSI com limites configuráveis
-    if (rsi < ANALISE_CONFIG.RSI_OVERSOLD && close > ema21) pontosCALL += 2;
-    if (rsi > ANALISE_CONFIG.RSI_OVERBOUGHT && close < ema21) pontosPUT += 2;
+    // Regras de tendência
+    const trendUp = ema21 > ema50 && currentPrice > ema21;
+    const trendDown = ema21 < ema50 && currentPrice < ema21;
 
-    // 2. MACD com verificação de força
-    if (macd.histograma > 0.0002 && macd.macdLinha > macd.sinalLinha) pontosCALL += 2;
-    if (macd.histograma < -0.0002 && macd.macdLinha < macd.sinalLinha) pontosPUT += 2;
+    // Regras de entrada
+    if (rsi < 30 && trendUp) callScore += 2;
+    if (rsi > 70 && trendDown) putScore += 2;
 
-    // 3. Alinhamento de médias mais rigoroso
-    if (close > sma9 && sma9 > ema21 && ema21 > ema50) pontosCALL += 1;
-    if (close < sma9 && sma9 < ema21 && ema21 < ema50) pontosPUT += 1;
+    if (macd.histograma > 0 && macd.macd > macd.signal) callScore += 2;
+    if (macd.histograma < 0 && macd.macd < macd.signal) putScore += 2;
 
-    // 4. Fractais com volume significativo
-    if (fractal?.tipo === "FUNDO" && volume > volumeMedia * ANALISE_CONFIG.VOLUME_MULTIPLIER) pontosCALL += 1;
-    if (fractal?.tipo === "TOPO" && volume > volumeMedia * ANALISE_CONFIG.VOLUME_MULTIPLIER) pontosPUT += 1;
+    if (sma9 > ema21 && trendUp) callScore += 1;
+    if (sma9 < ema21 && trendDown) putScore += 1;
 
-    // 5. ADX com força mínima configurável
-    if (adx > ANALISE_CONFIG.ADX_FORCA_MINIMA) {
-      if (macd.macdLinha > macd.sinalLinha) pontosCALL += 1;
-      else pontosPUT += 1;
+    if (fractal?.type === "BOTTOM" && volumes[volumes.length - 1] > avgVolume * 1.2) callScore += 1;
+    if (fractal?.type === "TOP" && volumes[volumes.length - 1] > avgVolume * 1.2) putScore += 1;
+
+    if (adx > 25) {
+      if (macd.macd > macd.signal) callScore += 1;
+      else putScore += 1;
     }
 
-    // Tomada de decisão MODIFICADA
-    let comando = "ESPERAR";
-    if (pontosCALL >= ANALISE_CONFIG.PONTUACAO_MINIMA && pontosCALL >= pontosPUT + ANALISE_CONFIG.DIFERENCA_MINIMA) {
-      comando = "CALL";
-    } else if (pontosPUT >= ANALISE_CONFIG.PONTUACAO_MINIMA && pontosPUT >= pontosCALL + ANALISE_CONFIG.DIFERENCA_MINIMA) {
-      comando = "PUT";
+    // Filtro de volatilidade
+    const minATR = currentPrice * 0.002; // 0.2% do preço
+    if (atr < minATR) {
+      callScore = 0;
+      putScore = 0;
     }
 
-    // Atualiza UI (MANTIDO)
-    ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR", {
-      hour: '2-digit', 
-      minute: '2-digit', 
+    // Tomada de decisão
+    let signal = "WAIT";
+    if (callScore >= 5 && callScore >= putScore + 2) signal = "CALL";
+    else if (putScore >= 5 && putScore >= callScore + 2) signal = "PUT";
+
+    return {
+      signal,
+      indicators: {
+        price: currentPrice,
+        rsi,
+        macd,
+        sma9,
+        ema21,
+        ema50,
+        adx,
+        fractal,
+        volume: volumes[volumes.length - 1],
+        avgVolume,
+        atr
+      },
+      scores: {
+        call: callScore,
+        put: putScore
+      }
+    };
+  }
+
+  updateHistory(analysis) {
+    const now = new Date();
+    const timeString = now.toLocaleTimeString("pt-BR", {
+      hour: '2-digit',
+      minute: '2-digit',
       second: '2-digit'
     });
 
-    const elementoComando = document.getElementById("comando");
-    if (elementoComando) elementoComando.textContent = comando;
-    
-    const elementoScore = document.getElementById("score");
-    if (elementoScore) elementoScore.textContent = `RSI: ${rsi.toFixed(2)} | ADX: ${adx.toFixed(2)}`;
-    
-    const elementoHora = document.getElementById("hora");
-    if (elementoHora) elementoHora.textContent = ultimaAtualizacao;
+    this.lastUpdate = timeString;
+    this.history.unshift({
+      time: timeString,
+      signal: analysis.signal,
+      price: analysis.indicators.price,
+      indicators: analysis.indicators
+    });
 
-    const elementoCriterios = document.getElementById("criterios");
-    if (elementoCriterios) {
-      elementoCriterios.innerHTML = `
-        <li>RSI: ${rsi.toFixed(2)} (${rsi < ANALISE_CONFIG.RSI_OVERSOLD ? '↓' : rsi > ANALISE_CONFIG.RSI_OVERBOUGHT ? '↑' : '•'})</li>
-        <li>ADX: ${adx.toFixed(2)} ${adx > ANALISE_CONFIG.ADX_FORCA_MINIMA ? '📈' : ''}</li>
-        <li>MACD: ${macd.histograma.toFixed(4)} ${macd.histograma > 0 ? '🟢' : '🔴'}</li>
-        <li>Preço: $${close.toFixed(2)}</li>
-        <li>Médias: ${sma9?.toFixed(2) || 'N/A'} / ${ema21?.toFixed(2) || 'N/A'} / ${ema50?.toFixed(2) || 'N/A'}</li>
-        <li>Fractal: ${fractal?.tipo || "—"} ${fractal?.tipo ? (fractal.tipo === "TOPO" ? '🔻' : '🔺') : ''}</li>
+    if (this.history.length > 5) {
+      this.history.pop();
+    }
+  }
+
+  startTimer() {
+    if (this.currentInterval) {
+      clearInterval(this.currentInterval);
+    }
+
+    const now = Date.now();
+    const nextMinute = Math.ceil(now / 60000) * 60000;
+    const delay = nextMinute - now;
+    this.timer = Math.floor(delay / 1000);
+
+    this.currentInterval = setInterval(() => {
+      this.timer = Math.max(0, this.timer - 1);
+      
+      if (this.timer <= 0) {
+        clearInterval(this.currentInterval);
+        this.runAnalysis();
+      }
+    }, 1000);
+  }
+
+  async runAnalysis() {
+    try {
+      const data = await this.fetchMarketData();
+      const analysis = this.analyzeData(data);
+      
+      if (analysis) {
+        this.updateHistory(analysis);
+        this.updateUI(analysis);
+        this.playSignalSound(analysis.signal);
+      }
+      
+      this.startTimer();
+    } catch (error) {
+      console.error("Analysis error:", error);
+      setTimeout(() => this.runAnalysis(), 10000);
+    }
+  }
+
+  playSignalSound(signal) {
+    try {
+      if (signal === "CALL") {
+        const sound = document.getElementById("sound-call");
+        if (sound) sound.play().catch(e => console.warn("Sound error:", e));
+      } else if (signal === "PUT") {
+        const sound = document.getElementById("sound-put");
+        if (sound) sound.play().catch(e => console.warn("Sound error:", e));
+      }
+    } catch (e) {
+      console.warn("Audio error:", e);
+    }
+  }
+
+  updateUI(analysis) {
+    // Atualiza elementos da interface
+    const formatPrice = (price) => price.toFixed(2);
+    const formatIndicator = (value) => typeof value === 'number' ? value.toFixed(2) : 'N/A';
+
+    // Atualiza o relógio
+    const clockElement = document.getElementById("clock");
+    if (clockElement) clockElement.textContent = this.lastUpdate;
+
+    // Atualiza o histórico
+    const historyElement = document.getElementById("history");
+    if (historyElement) {
+      historyElement.textContent = `${this.wins} WIN / ${this.losses} LOSS`;
+    }
+
+    // Atualiza o sinal atual
+    const signalElement = document.getElementById("signal");
+    if (signalElement) {
+      signalElement.textContent = analysis.signal;
+      signalElement.className = analysis.signal.toLowerCase();
+    }
+
+    // Atualiza os indicadores
+    const indicatorsElement = document.getElementById("indicators");
+    if (indicatorsElement) {
+      indicatorsElement.innerHTML = `
+        <li>Price: $${formatPrice(analysis.indicators.price)}</li>
+        <li>RSI: ${formatIndicator(analysis.indicators.rsi)} 
+            ${analysis.indicators.rsi < 30 ? '↓' : analysis.indicators.rsi > 70 ? '↑' : '•'}</li>
+        <li>MACD: ${formatIndicator(analysis.indicators.macd.histograma)} 
+            ${analysis.indicators.macd.histograma > 0 ? '🟢' : '🔴'}</li>
+        <li>ADX: ${formatIndicator(analysis.indicators.adx)} 
+            ${analysis.indicators.adx > 25 ? '📈' : ''}</li>
+        <li>EMA(21): ${formatIndicator(analysis.indicators.ema21)}</li>
+        <li>ATR: ${formatIndicator(analysis.indicators.atr)}</li>
+        <li>Volume: ${formatIndicator(analysis.indicators.volume)} 
+            (Avg: ${formatIndicator(analysis.indicators.avgVolume)})</li>
+        <li>Fractal: ${analysis.indicators.fractal?.type || "—"} 
+            ${analysis.indicators.fractal?.confirmed ? '✅' : ''}</li>
       `;
     }
 
-    // Atualiza histórico
-    if (comando !== "ESPERAR") {
-      ultimos.unshift(`${ultimaAtualizacao} - ${comando} ($${close.toFixed(2)})`);
-      if (ultimos.length > 5) ultimos.pop();
-      
-      const elementoUltimos = document.getElementById("ultimos");
-      if (elementoUltimos) {
-        elementoUltimos.innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
-      }
-
-      // Sons de alerta
-      try {
-        const som = document.getElementById(`som-${comando.toLowerCase()}`);
-        if (som) await som.play().catch(e => console.warn("Erro ao reproduzir som:", e));
-      } catch (e) {
-        console.warn("Erro ao reproduzir som:", e);
-      }
+    // Atualiza o histórico de sinais
+    const lastSignalsElement = document.getElementById("last-signals");
+    if (lastSignalsElement) {
+      lastSignalsElement.innerHTML = this.history
+        .map(item => `<li>${item.time} - ${item.signal} ($${formatPrice(item.price)})</li>`)
+        .join("");
     }
 
-  } catch (e) {
-    console.error("Erro na leitura:", e);
-    setTimeout(leituraReal, 10000);
-  } finally {
-    leituraEmAndamento = false;
+    // Atualiza o timer
+    const timerElement = document.getElementById("timer");
+    if (timerElement) {
+      timerElement.textContent = `0:${this.timer.toString().padStart(2, '0')}`;
+      timerElement.style.color = this.timer <= 5 ? 'red' : '';
+    }
   }
 }
 
 // =============================================
-// TIMER PRECISO (MANTIDO)
+// INICIALIZAÇÃO DA APLICAÇÃO
 // =============================================
-function iniciarTimer() {
-  if (intervaloAtual) {
-    clearInterval(intervaloAtual);
+
+class TradingApp {
+  constructor() {
+    this.engine = new TradingEngine();
+    this.priceUpdateInterval = null;
   }
 
-  const agora = Date.now();
-  const delayProximaVela = 60000 - (agora % 60000);
-  timer = Math.max(1, Math.floor(delayProximaVela / 1000));
-
-  const elementoTimer = document.getElementById("timer");
-  if (elementoTimer) {
-    elementoTimer.textContent = formatarTimer(timer);
-    elementoTimer.style.color = timer <= 5 ? 'red' : '';
+  initialize() {
+    this.setupUI();
+    this.startClock();
+    this.startPriceUpdates();
+    this.engine.runAnalysis();
   }
 
-  intervaloAtual = setInterval(() => {
-    timer = Math.max(0, timer - 1);
-    
-    if (elementoTimer) {
-      elementoTimer.textContent = formatarTimer(timer);
-      if (timer <= 5) elementoTimer.style.color = 'red';
+  setupUI() {
+    // Configura eventos de UI
+    const manualRefresh = document.getElementById("manual-refresh");
+    if (manualRefresh) {
+      manualRefresh.addEventListener("click", () => {
+        this.engine.runAnalysis();
+      });
     }
-
-    if (timer <= 0) {
-      clearInterval(intervaloAtual);
-      leituraReal().finally(() => iniciarTimer());
-    }
-  }, 1000);
-}
-
-// =============================================
-// INICIALIZAÇÃO (MANTIDO)
-// =============================================
-function iniciarAplicativo() {
-  // Verifica ambiente
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    console.error("Ambiente de navegador não detectado");
-    return;
   }
 
-  // Verifica API fetch
-  if (typeof fetch === 'undefined') {
-    console.error("API fetch não disponível");
-    return;
-  }
-
-  // Verifica elementos DOM
-  const elementosNecessarios = [
-    'hora', 'historico', 'comando', 
-    'score', 'criterios', 'ultimos', 'timer'
-  ];
-  
-  const elementosFaltando = elementosNecessarios
-    .map(id => ({ id, elemento: document.getElementById(id) }))
-    .filter(item => !item.elemento);
-  
-  if (elementosFaltando.length > 0) {
-    console.error("Elementos DOM faltando:", elementosFaltando.map(item => item.id));
-    return;
-  }
-
-  // Inicia os processos
-  try {
-    setInterval(atualizarRelogio, 1000);
-    iniciarTimer();
-    leituraReal();
-
-    // Atualização contínua do preço
-    setInterval(async () => {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        
-        const response = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT", {
-          signal: controller.signal
+  startClock() {
+    setInterval(() => {
+      const now = new Date();
+      const clockElement = document.getElementById("clock");
+      if (clockElement) {
+        clockElement.textContent = now.toLocaleTimeString("pt-BR", {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
         });
-        clearTimeout(timeoutId);
-
-        if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
-        
-        const dados = await response.json();
-        if (!dados || typeof dados.lastPrice === 'undefined') {
-          throw new Error("Dados de preço inválidos");
-        }
-
-        const preco = parseFloat(dados.lastPrice);
-        if (isNaN(preco)) throw new Error("Preço inválido");
-
-        const precoLi = document.getElementById("criterios")?.querySelector("li:nth-child(4)");
-        if (precoLi) {
-          precoLi.textContent = `Preço: $${preco.toFixed(2)}`;
-        }
-      } catch (e) {
-        console.error("Erro ao atualizar preço:", e);
       }
-    }, 5000);
+    }, 1000);
+  }
 
-  } catch (e) {
-    console.error("Erro na inicialização:", e);
+  async startPriceUpdates() {
+    if (this.priceUpdateInterval) {
+      clearInterval(this.priceUpdateInterval);
+    }
+
+    const updatePrice = async () => {
+      try {
+        const response = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT");
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        if (!data?.lastPrice) return;
+
+        const priceElement = document.getElementById("current-price");
+        if (priceElement) {
+          priceElement.textContent = `$${parseFloat(data.lastPrice).toFixed(2)}`;
+        }
+      } catch (error) {
+        console.error("Price update error:", error);
+      }
+    };
+
+    await updatePrice();
+    this.priceUpdateInterval = setInterval(updatePrice, 5000);
   }
 }
 
-// Inicia quando o DOM estiver pronto
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', iniciarAplicativo);
-} else {
-  iniciarAplicativo();
-}
-
-// Testes unitários básicos
-function testeUnidade() {
-  console.assert(calcularRSI([], 14) === 50, "RSI deve retornar 50 para array vazio");
-  console.assert(calcularSMA([1,2,3], 3) === 2, "SMA de [1,2,3] deve ser 2");
-  console.assert(formatarTimer(5) === "0:05", "Formatação de timer deve ter 2 dígitos");
-  console.assert(calcularMACD([]).histograma === 0, "MACD deve retornar 0 para array vazio");
-}
-testeUnidade();
+// Inicializa a aplicação quando o DOM estiver pronto
+document.addEventListener("DOMContentLoaded", () => {
+  try {
+    const app = new TradingApp();
+    app.initialize();
+  } catch (error) {
+    console.error("Application failed to start:", error);
+    const errorElement = document.getElementById("error-message");
+    if (errorElement) {
+      errorElement.textContent = "Failed to initialize application. Please try again later.";
+      errorElement.style.display = "block";
+    }
+  }
+});
