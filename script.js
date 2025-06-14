@@ -9,6 +9,32 @@ let leituraEmAndamento = false;
 let intervaloAtual = null;
 
 // =============================================
+// MONITOR DE SAÚDE (DIAGNÓSTICO)
+// =============================================
+async function verificarProblemas() {
+  try {
+    const apiResponse = await fetch("https://api.binance.com/api/v3/ping");
+    console.log("✅ Conexão com Binance:", apiResponse.ok ? "OK" : "FALHA");
+    
+    const candleData = await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=2");
+    const candles = await candleData.json();
+    console.log("📊 Dados recebidos:", {
+      candles: candles.length,
+      últimoPreço: candles[0][4],
+      horário: new Date(candles[0][0]).toLocaleTimeString()
+    });
+    
+    const testRSI = calcularRSI([30,31,32,33,34,35,36,37,38,39,40,41,42,43,44]);
+    console.log("📈 Teste RSI:", testRSI > 30 && testRSI < 70 ? "OK" : "VALOR ESTRANHO");
+    
+    return true;
+  } catch (e) {
+    console.error("❌ Falha no diagnóstico:", e);
+    return false;
+  }
+}
+
+// =============================================
 // FUNÇÕES BÁSICAS
 // =============================================
 function atualizarRelogio() {
@@ -185,7 +211,7 @@ function detectarFractais(highs, lows, periodo = 2) {
 }
 
 // =============================================
-// LÓGICA PRINCIPAL - VERSÃO 2.1 (SENSÍVEL)
+// LÓGICA PRINCIPAL - VERSÃO 2.2 (SENSÍVEL)
 // =============================================
 async function leituraReal() {
   if (leituraEmAndamento) return;
@@ -235,41 +261,56 @@ async function leituraReal() {
     const volumeMedia = calcularSMA(volumes, 20) || 0;
     const volatilidade = (high - low) / low * 100;
 
-    // Sistema de pontuação OTIMIZADO - versão 2.1
+    // Sistema de pontuação OTIMIZADO - versão 2.2
     let pontosCALL = 0;
     let pontosPUT = 0;
 
     // 1. Tendência (Peso maior) - Relaxado
-    if (macd.histograma > 0) pontosCALL += 2;
-    if (macd.histograma < 0) pontosPUT += 2;
+    if (macd.histograma > 0) pontosCALL += 1;
+    if (macd.histograma < 0) pontosPUT += 1;
 
     // 2. Momentum (Peso médio) - Limites ampliados
-    if (rsi < 40 && close > ema21) pontosCALL += 1;
-    if (rsi > 60 && close < ema21) pontosPUT += 1;
+    if (rsi < 45) pontosCALL += 1;
+    if (rsi > 55) pontosPUT += 1;
 
     // 3. Fractais (Confirmados por volume) - Mais sensível
     if (fractal?.tipo === "FUNDO") pontosCALL += 1;
     if (fractal?.tipo === "TOPO") pontosPUT += 1;
 
-    // 4. Filtro ADX adaptativo
-    if (adx > 18) {
-      if (plusDI > minusDI) pontosCALL += 1;
-      else pontosPUT += 1;
-    }
-
     // DECISÃO FINAL (Critério relaxado)
     let comando = "ESPERAR";
     if (volatilidade > 0.05) { // Filtro mínimo de volatilidade
-      if (pontosCALL >= 3) comando = "CALL";
-      else if (pontosPUT >= 3) comando = "PUT";
+      if (pontosCALL >= 2) comando = "CALL";
+      else if (pontosPUT >= 2) comando = "PUT";
     }
 
     // DEBUG: Mostra pontuação no console
-    console.log(`[DEBUG] Pontuação: 
-      CALL = ${pontosCALL} (MACD: ${macd.histograma > 0 ? '✔' : '✖'}, RSI: ${rsi < 40 ? '✔' : '✖'})
-      PUT = ${pontosPUT} (MACD: ${macd.histograma < 0 ? '✔' : '✖'}, RSI: ${rsi > 60 ? '✔' : '✖'})
+    console.log(`[${new Date().toLocaleTimeString()}] Pontuação: 
+      CALL = ${pontosCALL} (MACD: ${macd.histograma > 0 ? '✔' : '✖'}, RSI: ${rsi < 45 ? '✔' : '✖'})
+      PUT = ${pontosPUT} (MACD: ${macd.histograma < 0 ? '✔' : '✖'}, RSI: ${rsi > 55 ? '✔' : '✖'})
       Volatilidade: ${volatilidade.toFixed(2)}%
     `);
+
+    // Notificações
+    if (comando === "CALL" || comando === "PUT") {
+      // Notificação no navegador
+      if (Notification.permission === "granted") {
+        new Notification(`SINAL ${comando}`, { 
+          body: `BTC: $${close.toFixed(2)} (${new Date().toLocaleTimeString()})`,
+          icon: comando === "CALL" ? 'https://i.imgur.com/upG7aIk.png' : 'https://i.imgur.com/DmG0pWQ.png'
+        });
+      }
+
+      // Alerta sonoro
+      const audio = new Audio(comando === "CALL" 
+        ? 'https://assets.mixkit.co/sfx/preview/mixkit-alarm-digital-clock-beep-989.mp3' 
+        : 'https://assets.mixkit.co/sfx/preview/mixkit-ominous-drums-227.mp3');
+      audio.play().catch(e => console.log("Ative o áudio manualmente!"));
+
+      // Log colorido no console
+      console.log(`%c${comando} em $${close.toFixed(2)}`, 
+        `color: white; background: ${comando === "CALL" ? "green" : "red"}; font-size: 14px; padding: 4px;`);
+    }
 
     // Atualiza UI
     ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR", {
@@ -288,8 +329,8 @@ async function leituraReal() {
     const elementoCriterios = document.getElementById("criterios");
     if (elementoCriterios) {
       elementoCriterios.innerHTML = `
-        <li>RSI: ${rsi.toFixed(2)} ${rsi < 40 ? '↓' : rsi > 60 ? '↑' : '•'}</li>
-        <li>ADX: ${adx.toFixed(2)} ${adx > 18 ? '📈' : '📉'}</li>
+        <li>RSI: ${rsi.toFixed(2)} ${rsi < 45 ? '↓' : rsi > 55 ? '↑' : '•'}</li>
+        <li>ADX: ${adx.toFixed(2)} ${adx > 20 ? '📈' : '📉'}</li>
         <li>MACD: ${macd.histograma.toFixed(4)} ${macd.histograma > 0 ? '🟢' : '🔴'}</li>
         <li>Preço: $${close.toFixed(2)} (Vol: ${volatilidade.toFixed(2)}%)</li>
         <li>Médias: ${sma9.toFixed(2)} / ${ema21.toFixed(2)} / ${ema50.toFixed(2)}</li>
@@ -304,20 +345,6 @@ async function leituraReal() {
     const elementoUltimos = document.getElementById("ultimos");
     if (elementoUltimos) {
       elementoUltimos.innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
-    }
-
-    // Sons de alerta
-    try {
-      if (comando === "CALL") {
-        const somCall = document.getElementById("som-call");
-        if (somCall) await somCall.play().catch(e => console.warn("Erro ao reproduzir som:", e));
-      }
-      if (comando === "PUT") {
-        const somPut = document.getElementById("som-put");
-        if (somPut) await somPut.play().catch(e => console.warn("Erro ao reproduzir som:", e));
-      }
-    } catch (e) {
-      console.warn("Erro ao reproduzir som:", e);
     }
 
   } catch (e) {
@@ -377,7 +404,13 @@ function iniciarAplicativo() {
     }
   }
 
+  // Ativa notificações
+  Notification.requestPermission().then(perm => {
+    if (perm === "granted") console.log("🔔 Notificações ativadas!");
+  });
+
   // Inicia processos
+  verificarProblemas();
   setInterval(atualizarRelogio, 1000);
   iniciarTimer();
   leituraReal();
