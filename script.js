@@ -5,21 +5,32 @@ let win = 0, loss = 0;
 let ultimos = [];
 let timer = 60;
 let ultimaAtualizacao = "";
+let leituraEmAndamento = false;
+let intervaloAtual = null;
 
 // =============================================
 // FUNÇÕES BÁSICAS
 // =============================================
 function atualizarRelogio() {
   const agora = new Date();
-  document.getElementById("hora").textContent = agora.toLocaleTimeString("pt-BR", {
-    hour: '2-digit', minute: '2-digit', second: '2-digit'
-  });
+  const elementoHora = document.getElementById("hora");
+  if (elementoHora) {
+    elementoHora.textContent = agora.toLocaleTimeString("pt-BR", {
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit'
+    });
+  }
 }
 
 function registrar(tipo) {
   if (tipo === 'WIN') win++;
-  else loss++;
-  document.getElementById("historico").textContent = `${win} WIN / ${loss} LOSS`;
+  else if (tipo === 'LOSS') loss++;
+  
+  const elementoHistorico = document.getElementById("historico");
+  if (elementoHistorico) {
+    elementoHistorico.textContent = `${win} WIN / ${loss} LOSS`;
+  }
 }
 
 function formatarTimer(segundos) {
@@ -27,196 +38,281 @@ function formatarTimer(segundos) {
 }
 
 // =============================================
-// INDICADORES
+// INDICADORES TÉCNICOS
 // =============================================
-function calcularRSI(closes, periodo) {
-  if (closes.length < periodo + 1) return 50;
+function calcularRSI(closes, periodo = 14) {
+  if (!Array.isArray(closes) || closes.length < periodo + 1) return 50;
+  
   let gains = 0, losses = 0;
   for (let i = 1; i <= periodo; i++) {
     const diff = closes[i] - closes[i - 1];
     if (diff > 0) gains += diff;
-    else losses -= diff;
+    else losses += Math.abs(diff);
   }
+
   let avgGain = gains / periodo;
-  let avgLoss = losses / periodo;
+  let avgLoss = losses / periodo || 0.001;
 
   for (let i = periodo + 1; i < closes.length; i++) {
     const diff = closes[i] - closes[i - 1];
     const gain = diff > 0 ? diff : 0;
-    const loss = diff < 0 ? -diff : 0;
+    const loss = diff < 0 ? Math.abs(diff) : 0;
     avgGain = (avgGain * (periodo - 1) + gain) / periodo;
     avgLoss = (avgLoss * (periodo - 1) + loss) / periodo;
   }
 
-  if (avgLoss === 0) return 100;
+  if (avgLoss <= 0.001) return 100;
   const rs = avgGain / avgLoss;
   return 100 - (100 / (1 + rs));
 }
 
 function calcularSerieEMA(dados, periodo) {
+  if (!Array.isArray(dados) || dados.length < periodo) return [];
+  
   const k = 2 / (periodo + 1);
   const emaArray = [];
   let soma = 0;
-  for (let i = 0; i < periodo; i++) soma += dados[i];
+  
+  for (let i = 0; i < periodo; i++) {
+    soma += dados[i];
+  }
   emaArray[periodo - 1] = soma / periodo;
+
   for (let i = periodo; i < dados.length; i++) {
     emaArray[i] = dados[i] * k + emaArray[i - 1] * (1 - k);
   }
+  
   return emaArray;
 }
 
 function calcularSMA(dados, periodo) {
-  if (dados.length < periodo) return null;
-  const slice = dados.slice(-periodo);
-  return slice.reduce((a, b) => a + b, 0) / periodo;
+  if (!Array.isArray(dados) || dados.length < periodo) return null;
+  return dados.slice(-periodo).reduce((a, b) => a + b, 0) / periodo;
 }
 
-function calcularMACD(closes, rapida, lenta, sinal) {
-  const emaRapida = calcularSerieEMA(closes, rapida);
-  const emaLenta = calcularSerieEMA(closes, lenta);
-  const macdLinha = [];
-  const inicio = Math.max(rapida, lenta);
-  for (let i = inicio; i < closes.length; i++) {
-    macdLinha[i] = emaRapida[i] - emaLenta[i];
-  }
-  const macdValidos = macdLinha.slice(inicio).filter(v => v !== null && v !== undefined);
-  const sinalLinha = calcularSerieEMA(macdValidos, sinal);
-  const ultimoMACD = macdLinha[macdLinha.length - 1];
-  const ultimoSinal = sinalLinha[sinalLinha.length - 1];
-  const histograma = (ultimoMACD !== null && ultimoSinal !== undefined) ? ultimoMACD - ultimoSinal : 0;
-  return { histograma };
-}
-
-function calcularADX(highs, lows, closes, periodo) {
-  if (highs.length < periodo + 1) return 0;
-  const tr = [], plusDM = [], minusDM = [];
-  for (let i = 1; i < highs.length; i++) {
-    const highDiff = highs[i] - highs[i - 1];
-    const lowDiff = lows[i - 1] - lows[i];
-    plusDM.push((highDiff > lowDiff && highDiff > 0) ? highDiff : 0);
-    minusDM.push((lowDiff > highDiff && lowDiff > 0) ? lowDiff : 0);
-    const trueRange = Math.max(
-      highs[i] - lows[i],
-      Math.abs(highs[i] - closes[i - 1]),
-      Math.abs(lows[i] - closes[i - 1])
-    );
-    tr.push(trueRange);
-  }
-
-  function calcularEMAArray(dados, periodo) {
-    const k = 2 / (periodo + 1);
-    const emaArray = [];
-    let soma = 0;
-    for (let i = 0; i < periodo; i++) soma += dados[i];
-    emaArray[periodo - 1] = soma / periodo;
-    for (let i = periodo; i < dados.length; i++) {
-      emaArray[i] = dados[i] * k + emaArray[i - 1] * (1 - k);
+function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
+  try {
+    if (!Array.isArray(closes) || closes.length < lenta + sinal) {
+      return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
     }
-    return emaArray;
-  }
 
-  const trEMA = calcularEMAArray(tr, periodo);
-  const plusDMEMA = calcularEMAArray(plusDM, periodo);
-  const minusDMEMA = calcularEMAArray(minusDM, periodo);
-  const plusDI = plusDMEMA.map((v, i) => 100 * (v / (trEMA[i] || 1e-10)));
-  const minusDI = minusDMEMA.map((v, i) => 100 * (v / (trEMA[i] || 1e-10)));
-  const dx = plusDI.map((v, i) => {
-    const sum = v + minusDI[i];
-    return sum ? 100 * Math.abs(v - minusDI[i]) / sum : 0;
-  });
-  const adxArray = calcularEMAArray(dx, periodo);
-  return adxArray[adxArray.length - 1] || 0;
+    const emaRapida = calcularSerieEMA(closes, rapida);
+    const emaLenta = calcularSerieEMA(closes, lenta);
+    
+    const macdLinha = [];
+    const inicio = Math.max(rapida, lenta);
+
+    for (let i = inicio; i < closes.length; i++) {
+      macdLinha[i] = emaRapida[i] - emaLenta[i];
+    }
+
+    const sinalLinha = calcularSerieEMA(macdLinha.slice(inicio), sinal);
+    
+    const ultimoMACD = macdLinha[macdLinha.length - 1] || 0;
+    const ultimoSinal = sinalLinha[sinalLinha.length - 1] || 0;
+    
+    return {
+      histograma: ultimoMACD - ultimoSinal,
+      macdLinha: ultimoMACD,
+      sinalLinha: ultimoSinal
+    };
+  } catch (e) {
+    console.error("Erro no cálculo MACD:", e);
+    return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
+  }
 }
 
-function detectarFractais(highs, lows, periodo) {
-  if (highs.length < periodo * 2 + 1) return { ultimo: null };
-  const fractais = [];
-  for (let i = periodo; i <= highs.length - periodo - 1; i++) {
-    const janelaHigh = highs.slice(i - periodo, i + periodo + 1);
-    const janelaLow = lows.slice(i - periodo, i + periodo + 1);
-    const top = Math.max(...janelaHigh);
-    const bottom = Math.min(...janelaLow);
-    if (highs[i] === top) fractais.push({ tipo: "TOPO" });
-    else if (lows[i] === bottom) fractais.push({ tipo: "FUNDO" });
+function calcularADX(highs, lows, closes, periodo = 14) {
+  try {
+    if (!Array.isArray(highs) || highs.length < periodo * 2) return { adx: 0, plusDI: 0, minusDI: 0 };
+
+    const trs = [], plusDMs = [], minusDMs = [];
+    for (let i = 1; i < highs.length; i++) {
+      const tr = Math.max(
+        highs[i] - lows[i],
+        Math.abs(highs[i] - closes[i - 1]),
+        Math.abs(lows[i] - closes[i - 1])
+      );
+      trs.push(tr);
+
+      const highDiff = highs[i] - highs[i - 1];
+      const lowDiff = lows[i - 1] - lows[i];
+      plusDMs.push(highDiff > lowDiff && highDiff > 0 ? highDiff : 0);
+      minusDMs.push(lowDiff > highDiff && lowDiff > 0 ? lowDiff : 0);
+    }
+
+    const trEMA = calcularSerieEMA(trs, periodo);
+    const plusDMEMA = calcularSerieEMA(plusDMs, periodo);
+    const minusDMEMA = calcularSerieEMA(minusDMs, periodo);
+
+    const plusDI = plusDMEMA.map((dm, i) => 100 * (dm / (trEMA[i] || 1)));
+    const minusDI = minusDMEMA.map((dm, i) => 100 * (dm / (trEMA[i] || 1)));
+
+    const dx = plusDI.map((pdi, i) => {
+      const sum = pdi + minusDI[i];
+      return sum ? 100 * Math.abs(pdi - minusDI[i]) / sum : 0;
+    });
+
+    const adx = calcularSerieEMA(dx, periodo).pop() || 0;
+    
+    return {
+      adx,
+      plusDI: plusDI[plusDI.length - 1] || 0,
+      minusDI: minusDI[minusDI.length - 1] || 0
+    };
+  } catch (e) {
+    console.error("Erro no cálculo ADX:", e);
+    return { adx: 0, plusDI: 0, minusDI: 0 };
   }
-  return { ultimo: fractais.length ? fractais[fractais.length - 1].tipo : null };
+}
+
+function detectarFractais(highs, lows, periodo = 2) {
+  try {
+    if (!Array.isArray(highs) || highs.length < periodo * 2 + 1) return null;
+
+    const fractais = [];
+    for (let i = periodo; i < highs.length - periodo; i++) {
+      const highWindow = highs.slice(i - periodo, i + periodo + 1);
+      const lowWindow = lows.slice(i - periodo, i + periodo + 1);
+      if (highs[i] === Math.max(...highWindow)) fractais.push({ tipo: "TOPO", index: i });
+      else if (lows[i] === Math.min(...lowWindow)) fractais.push({ tipo: "FUNDO", index: i });
+    }
+    return fractais.length ? fractais[fractais.length - 1] : null;
+  } catch (e) {
+    console.error("Erro na detecção de fractais:", e);
+    return null;
+  }
 }
 
 // =============================================
-// ANÁLISE COM SISTEMA DE PONTUAÇÃO
+// LÓGICA PRINCIPAL - VERSÃO OTIMIZADA
 // =============================================
-let leituraEmAndamento = false;
-
 async function leituraReal() {
   if (leituraEmAndamento) return;
   leituraEmAndamento = true;
 
   try {
-    const response = await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=100");
-    const dados = await response.json();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=100", {
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
 
-    const velaAtual = dados[dados.length - 1];
+    if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
+    
+    const dados = await response.json();
+    if (!Array.isArray(dados) || dados.length < 50) {
+      throw new Error("Dados insuficientes");
+    }
+
+    const dadosValidos = dados.filter(v => 
+      Array.isArray(v) && v.length >= 6 && !isNaN(parseFloat(v[4]))
+    );
+
+    if (dadosValidos.length < 50) throw new Error("Dados insuficientes após filtragem");
+
+    const velaAtual = dadosValidos[dadosValidos.length - 1];
     const close = parseFloat(velaAtual[4]);
     const high = parseFloat(velaAtual[2]);
     const low = parseFloat(velaAtual[3]);
+    const volume = parseFloat(velaAtual[5]);
 
-    const closes = dados.map(v => parseFloat(v[4]));
-    const highs = dados.map(v => parseFloat(v[2]));
-    const lows = dados.map(v => parseFloat(v[3]));
+    const closes = dadosValidos.map(v => parseFloat(v[4]));
+    const highs = dadosValidos.map(v => parseFloat(v[2]));
+    const lows = dadosValidos.map(v => parseFloat(v[3]));
+    const volumes = dadosValidos.map(v => parseFloat(v[5]));
 
-    const rsi = calcularRSI(closes, 14);
-    const macd = calcularMACD(closes, 12, 26, 9);
+    // Calcula indicadores
+    const rsi = calcularRSI(closes);
+    const macd = calcularMACD(closes);
     const sma9 = calcularSMA(closes, 9);
-    const ema21 = calcularSerieEMA(closes, 21).at(-1);
-    const ema50 = calcularSerieEMA(closes, 50).at(-1);
-    const adx = calcularADX(highs, lows, closes, 14);
-    const fractals = detectarFractais(highs, lows, 2);
+    const ema21 = calcularSerieEMA(closes, 21).pop() || 0;
+    const ema50 = calcularSerieEMA(closes, 50).pop() || 0;
+    const { adx, plusDI, minusDI } = calcularADX(highs, lows, closes);
+    const fractal = detectarFractais(highs.slice(0, -1), lows.slice(0, -1));
+    const volumeMedia = calcularSMA(volumes, 20) || 0;
+    const volatilidade = (high - low) / low * 100;
 
+    // Sistema de pontuação otimizado
     let pontosCALL = 0;
     let pontosPUT = 0;
 
-    if (rsi < 30) pontosCALL++;
-    if (rsi > 70) pontosPUT++;
+    // 1. Tendência (Peso maior)
+    if (macd.histograma > 0 && ema21 > ema50) pontosCALL += 2;
+    if (macd.histograma < 0 && ema21 < ema50) pontosPUT += 2;
 
-    if (sma9 > ema21 && ema21 > ema50) pontosCALL++;
-    if (sma9 < ema21 && ema21 < ema50) pontosPUT++;
+    // 2. Momentum (Peso médio)
+    if (rsi < 35 && close > ema21) pontosCALL += 1;
+    if (rsi > 65 && close < ema21) pontosPUT += 1;
 
-    if (macd.histograma > 0) pontosCALL++;
-    if (macd.histograma < 0) pontosPUT++;
+    // 3. Volume e Fractais
+    if (fractal?.tipo === "FUNDO" && close > ema21) pontosCALL += 1;
+    if (fractal?.tipo === "TOPO" && close < ema21) pontosPUT += 1;
+    if (volume > volumeMedia * 1.1) {
+      if (macd.histograma > 0) pontosCALL += 1;
+      else pontosPUT += 1;
+    }
 
-    if (fractals.ultimo === "FUNDO") pontosCALL++;
-    if (fractals.ultimo === "TOPO") pontosPUT++;
+    // 4. Força da Tendência
+    if (adx > 20) {
+      if (plusDI > minusDI) pontosCALL += 1;
+      else pontosPUT += 1;
+    }
 
-    if (adx > 25) { pontosCALL++; pontosPUT++; }
-
+    // Tomada de decisão otimizada
     let comando = "ESPERAR";
-    if (pontosCALL >= 3 && pontosCALL > pontosPUT) comando = "CALL";
-    else if (pontosPUT >= 3 && pontosPUT > pontosCALL) comando = "PUT";
+    if (volatilidade > 0.08) { // Filtro de volatilidade mínima
+      if (pontosCALL >= 4 && pontosCALL > pontosPUT) comando = "CALL";
+      else if (pontosPUT >= 4 && pontosPUT > pontosCALL) comando = "PUT";
+    }
 
+    // Atualiza UI
     ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR", {
       hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
 
-    document.getElementById("comando").textContent = comando;
-    document.getElementById("score").textContent = `RSI: ${rsi.toFixed(2)} | ADX: ${adx.toFixed(2)}`;
-    document.getElementById("hora").textContent = ultimaAtualizacao;
+    const elementoComando = document.getElementById("comando");
+    if (elementoComando) elementoComando.textContent = comando;
+    
+    const elementoScore = document.getElementById("score");
+    if (elementoScore) elementoScore.textContent = `RSI: ${rsi.toFixed(2)} | ADX: ${adx.toFixed(2)} | MACD: ${macd.histograma.toFixed(4)}`;
+    
+    const elementoHora = document.getElementById("hora");
+    if (elementoHora) elementoHora.textContent = ultimaAtualizacao;
 
-    document.getElementById("criterios").innerHTML = `
-      <li>RSI: ${rsi.toFixed(2)}</li>
-      <li>ADX: ${adx.toFixed(2)}</li>
-      <li>MACD: ${macd.histograma.toFixed(4)}</li>
-      <li>Preço: $${close.toFixed(2)}</li>
-      <li>Médias: ${sma9.toFixed(2)} / ${ema21.toFixed(2)} / ${ema50.toFixed(2)}</li>
-      <li>Fractal: ${fractals.ultimo || "Nenhum"}</li>
-    `;
+    const elementoCriterios = document.getElementById("criterios");
+    if (elementoCriterios) {
+      elementoCriterios.innerHTML = `
+        <li>RSI: ${rsi.toFixed(2)} ${rsi < 35 ? '↓' : rsi > 65 ? '↑' : '•'}</li>
+        <li>ADX: ${adx.toFixed(2)} ${adx > 20 ? '📈' : '📉'}</li>
+        <li>MACD: ${macd.histograma.toFixed(4)} ${macd.histograma > 0 ? '🟢' : '🔴'}</li>
+        <li>Preço: $${close.toFixed(2)} (Vol: ${volatilidade.toFixed(2)}%)</li>
+        <li>Médias: ${sma9.toFixed(2)} / ${ema21.toFixed(2)} / ${ema50.toFixed(2)}</li>
+        <li>Fractal: ${fractal?.tipo || "—"} ${fractal?.tipo ? (fractal.tipo === "TOPO" ? '🔻' : '🔺') : ''}</li>
+      `;
+    }
 
+    // Atualiza histórico
     ultimos.unshift(`${ultimaAtualizacao} - ${comando} ($${close.toFixed(2)})`);
     if (ultimos.length > 5) ultimos.pop();
-    document.getElementById("ultimos").innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
+    
+    const elementoUltimos = document.getElementById("ultimos");
+    if (elementoUltimos) {
+      elementoUltimos.innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
+    }
 
+    // Sons de alerta
     try {
-      if (comando === "CALL") await document.getElementById("som-call")?.play();
-      if (comando === "PUT") await document.getElementById("som-put")?.play();
+      if (comando === "CALL") {
+        const somCall = document.getElementById("som-call");
+        if (somCall) await somCall.play().catch(e => console.warn("Erro ao reproduzir som:", e));
+      }
+      if (comando === "PUT") {
+        const somPut = document.getElementById("som-put");
+        if (somPut) await somPut.play().catch(e => console.warn("Erro ao reproduzir som:", e));
+      }
     } catch (e) {
       console.warn("Erro ao reproduzir som:", e);
     }
@@ -229,38 +325,80 @@ async function leituraReal() {
 }
 
 // =============================================
-// TIMER COM SINCRONIZAÇÃO DE CANDLE
+// TIMER PRECISO
 // =============================================
 function iniciarTimer() {
-  timer = 60;
-  const intervalo = setInterval(() => {
-    timer--;
-    document.getElementById("timer").textContent = formatarTimer(timer);
+  if (intervaloAtual) clearInterval(intervaloAtual);
+
+  const agora = Date.now();
+  const delayProximaVela = 60000 - (agora % 60000);
+  timer = Math.max(1, Math.floor(delayProximaVela / 1000));
+
+  const elementoTimer = document.getElementById("timer");
+  if (elementoTimer) {
+    elementoTimer.textContent = formatarTimer(timer);
+    elementoTimer.style.color = timer <= 5 ? 'red' : '';
+  }
+
+  intervaloAtual = setInterval(() => {
+    timer = Math.max(0, timer - 1);
+    
+    if (elementoTimer) {
+      elementoTimer.textContent = formatarTimer(timer);
+      elementoTimer.style.color = timer <= 5 ? 'red' : '';
+    }
+
     if (timer <= 0) {
-      leituraReal();
-      timer = 60;
+      clearInterval(intervaloAtual);
+      leituraReal().finally(() => iniciarTimer());
     }
   }, 1000);
-  return intervalo;
 }
 
 // =============================================
 // INICIALIZAÇÃO
 // =============================================
-setInterval(atualizarRelogio, 1000);
-
-setInterval(async () => {
-  try {
-    const res = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT");
-    const dados = await res.json();
-    const precoLi = document.getElementById("criterios")?.querySelector("li:nth-child(4)");
-    if (precoLi) precoLi.textContent = `Preço: $${parseFloat(dados.lastPrice).toFixed(2)}`;
-  } catch (e) {
-    console.error("Erro ao atualizar preço:", e);
+function iniciarAplicativo() {
+  // Verifica ambiente
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    console.error("Ambiente de navegador não detectado");
+    return;
   }
-}, 5000);
 
-// Início
-atualizarRelogio();
-leituraReal();
-iniciarTimer();
+  // Verifica elementos DOM
+  const elementosNecessarios = ['hora', 'historico', 'comando', 'score', 'criterios', 'ultimos', 'timer'];
+  for (const id of elementosNecessarios) {
+    if (!document.getElementById(id)) {
+      console.error(`Elemento não encontrado: #${id}`);
+      return;
+    }
+  }
+
+  // Inicia processos
+  setInterval(atualizarRelogio, 1000);
+  iniciarTimer();
+  leituraReal();
+
+  // Atualização contínua do preço
+  setInterval(async () => {
+    try {
+      const response = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT");
+      if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
+      
+      const dados = await response.json();
+      const precoLi = document.getElementById("criterios")?.querySelector("li:nth-child(4)");
+      if (precoLi && dados.lastPrice) {
+        precoLi.textContent = `Preço: $${parseFloat(dados.lastPrice).toFixed(2)}`;
+      }
+    } catch (e) {
+      console.error("Erro ao atualizar preço:", e);
+    }
+  }, 5000);
+}
+
+// Inicia quando o DOM estiver pronto
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', iniciarAplicativo);
+} else {
+  iniciarAplicativo();
+}
