@@ -37,7 +37,7 @@ function formatarTimer(segundos) {
 }
 
 // =============================================
-// INDICADORES TÉCNICOS
+// INDICADORES TÉCNICOS (COM NOVOS INDICADORES)
 // =============================================
 function calcularRSI(closes, periodo = 14) {
   if (!Array.isArray(closes) || closes.length < periodo + 1) return 50;
@@ -63,6 +63,44 @@ function calcularRSI(closes, periodo = 14) {
   if (avgLoss <= 0.001) return 100;
   const rs = avgGain / avgLoss;
   return 100 - (100 / (1 + rs));
+}
+
+function calcularStochastic(highs, lows, closes, periodo = 14) {
+  try {
+    if (!Array.isArray(closes) || closes.length < periodo) return { k: 50, d: 50 };
+    
+    const kValues = [];
+    for (let i = periodo-1; i < closes.length; i++) {
+      const highestHigh = Math.max(...highs.slice(i-periodo+1, i+1));
+      const lowestLow = Math.min(...lows.slice(i-periodo+1, i+1));
+      const currentClose = closes[i];
+      kValues.push(((currentClose - lowestLow) / (highestHigh - lowestLow)) * 100);
+    }
+    
+    const dValues = calcularSMA(kValues, 3);
+    return {
+      k: kValues[kValues.length-1] || 50,
+      d: dValues || 50
+    };
+  } catch (e) {
+    console.error("Erro no cálculo Stochastic:", e);
+    return { k: 50, d: 50 };
+  }
+}
+
+function calcularWilliams(highs, lows, closes, periodo = 14) {
+  try {
+    if (!Array.isArray(closes) || closes.length < periodo) return 0;
+    
+    const highestHigh = Math.max(...highs.slice(-periodo));
+    const lowestLow = Math.min(...lows.slice(-periodo));
+    const currentClose = closes[closes.length-1];
+    
+    return ((highestHigh - currentClose) / (highestHigh - lowestLow)) * -100;
+  } catch (e) {
+    console.error("Erro no cálculo Williams:", e);
+    return 0;
+  }
 }
 
 function calcularSerieEMA(dados, periodo) {
@@ -131,46 +169,42 @@ function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
 function calcularScoreConfianca(indicadores) {
   let score = 50; // Base 50%
 
-  // RSI (0-20 pontos)
-  if (indicadores.rsi < 30 || indicadores.rsi > 70) {
-    score += 20;
-  } else if (indicadores.rsi < 35 || indicadores.rsi > 65) {
-    score += 10;
-  }
+  // RSI (0-15 pontos)
+  if (indicadores.rsi < 30 || indicadores.rsi > 70) score += 15;
+  else if (indicadores.rsi < 40 || indicadores.rsi > 60) score += 10;
 
-  // MACD (0-20 pontos)
-  if (Math.abs(indicadores.macd.histograma) > 0.5) {
-    score += 20;
-  } else if (Math.abs(indicadores.macd.histograma) > 0.2) {
-    score += 10;
-  }
+  // MACD (0-15 pontos)
+  if (Math.abs(indicadores.macd.histograma) > 0.3) score += 15;
+  else if (Math.abs(indicadores.macd.histograma) > 0.1) score += 10;
 
-  // Tendência (0-20 pontos)
-  if (indicadores.close > indicadores.ema21 && indicadores.ema21 > indicadores.ema50) {
-    score += 20;
-  } else if (indicadores.close < indicadores.ema21 && indicadores.ema21 < indicadores.ema50) {
-    score += 20;
-  }
+  // Tendência (0-15 pontos)
+  if (indicadores.close > indicadores.ema21 && indicadores.ema21 > indicadores.ema50) score += 15;
+  else if (indicadores.close < indicadores.ema21 && indicadores.ema21 < indicadores.ema50) score += 15;
 
   // Volume (0-10 pontos)
-  if (indicadores.volume > indicadores.volumeMedia * 1.5) {
-    score += 10;
-  }
+  if (indicadores.volume > indicadores.volumeMedia * 1.3) score += 10;
 
-  // Garantir que está entre 0-100%
+  // Stochastic (0-10 pontos)
+  if (indicadores.stoch.k < 20 && indicadores.stoch.d < 20) score += 10;
+  else if (indicadores.stoch.k > 80 && indicadores.stoch.d > 80) score += 10;
+
+  // Williams (0-10 pontos)
+  if (indicadores.williams < -80) score += 10;
+  else if (indicadores.williams > -20) score += 10;
+
   return Math.min(100, Math.max(0, score));
 }
 
 // =============================================
-// LÓGICA PRINCIPAL COM CRITÉRIOS COMPLETOS
+// LÓGICA PRINCIPAL OTIMIZADA
 // =============================================
 async function leituraReal() {
   if (leituraEmAndamento) return;
   leituraEmAndamento = true;
 
   try {
-    const endpoint = API_ENDPOINTS[0]; // Pode implementar fallback aqui
-    const response = await fetch(`${endpoint}/klines?symbol=BTCUSDT&interval=1m&limit=100`);
+    const endpoint = API_ENDPOINTS[0];
+    const response = await fetch(`${endpoint}/klines?symbol=BTCUSDT&interval=1m&limit=150`);
     const dados = await response.json();
 
     const dadosValidos = dados.filter(v => Array.isArray(v) && v.length >= 6);
@@ -194,24 +228,47 @@ async function leituraReal() {
     const ema21 = calcularSerieEMA(closes, 21).pop() || 0;
     const ema50 = calcularSerieEMA(closes, 50).pop() || 0;
     const volumeMedia = calcularSMA(volumes, 20) || 0;
+    const stoch = calcularStochastic(highs, lows, closes);
+    const williams = calcularWilliams(highs, lows, closes);
 
     // Calcula score de confiança
     const scoreConfianca = calcularScoreConfianca({
-      rsi, macd, close, ema21, ema50, volume, volumeMedia
+      rsi, macd, close, ema21, ema50, volume, volumeMedia, stoch, williams
     });
 
-    // Sistema de pontuação para entrada
+    // Sistema de pontuação mais sensível
     let pontosCALL = 0, pontosPUT = 0;
-    if (rsi < 30 && close > ema21) pontosCALL += 2;
-    if (rsi > 70 && close < ema21) pontosPUT += 2;
-    if (macd.histograma > 0) pontosCALL += 1;
-    if (macd.histograma < 0) pontosPUT += 1;
-    if (close > sma9 && sma9 > ema21) pontosCALL += 1;
-    if (close < sma9 && sma9 < ema21) pontosPUT += 1;
+    
+    // RSI ajustado
+    if (rsi < 40) pontosCALL += 1.2;
+    if (rsi > 60) pontosPUT += 1.2;
+    
+    // MACD ajustado
+    if (macd.histograma > 0.1) pontosCALL += 1.5;
+    if (macd.histograma < -0.1) pontosPUT += 1.5;
+    
+    // Médias móveis
+    if (close > ema21) pontosCALL += 0.8;
+    if (close < ema21) pontosPUT += 0.8;
+    
+    // Volume
+    if (volume > volumeMedia * 1.2) {
+      if (pontosCALL > pontosPUT) pontosCALL += 1;
+      else pontosPUT += 1;
+    }
+    
+    // Stochastic
+    if (stoch.k < 20 && stoch.d < 20) pontosCALL += 1;
+    if (stoch.k > 80 && stoch.d > 80) pontosPUT += 1;
+    
+    // Williams
+    if (williams < -80) pontosCALL += 0.8;
+    if (williams > -20) pontosPUT += 0.8;
 
+    // Tomada de decisão mais flexível
     let comando = "ESPERAR";
-    if (pontosCALL >= 3 && scoreConfianca >= 60) comando = "CALL";
-    else if (pontosPUT >= 3 && scoreConfianca >= 60) comando = "PUT";
+    if (pontosCALL >= 2.5 && scoreConfianca >= 50) comando = "CALL";
+    else if (pontosPUT >= 2.5 && scoreConfianca >= 50) comando = "PUT";
 
     // Atualiza a interface
     ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR");
@@ -221,12 +278,13 @@ async function leituraReal() {
 
     // Atualiza os critérios técnicos
     document.getElementById("criterios").innerHTML = `
-      <li>RSI: ${rsi.toFixed(2)} ${rsi < 30 ? '🔻' : rsi > 70 ? '🔺' : ''}</li>
+      <li>RSI: ${rsi.toFixed(2)} ${rsi < 40 ? '🔻' : rsi > 60 ? '🔺' : ''}</li>
       <li>MACD: ${macd.histograma.toFixed(4)} ${macd.histograma > 0 ? '🟢' : '🔴'}</li>
+      <li>Stochastic: K ${stoch.k.toFixed(2)} / D ${stoch.d.toFixed(2)}</li>
+      <li>Williams: ${williams.toFixed(2)}</li>
       <li>Preço: $${close.toFixed(2)}</li>
-      <li>Médias: SMA9 ${sma9?.toFixed(2) || 'N/A'} | EMA21 ${ema21.toFixed(2)} | EMA50 ${ema50.toFixed(2)}</li>
+      <li>Médias: SMA9 ${sma9?.toFixed(2)} | EMA21 ${ema21.toFixed(2)} | EMA50 ${ema50.toFixed(2)}</li>
       <li>Volume: ${volume.toFixed(2)} vs Média ${volumeMedia.toFixed(2)}</li>
-      <li>Tendência: ${close > ema21 ? 'Alta' : 'Baixa'}</li>
     `;
 
     // Atualiza histórico
@@ -245,7 +303,7 @@ async function leituraReal() {
 }
 
 // =============================================
-// TIMER E INICIALIZAÇÃO (MANTIDOS IGUAIS)
+// TIMER E INICIALIZAÇÃO
 // =============================================
 function iniciarTimer() {
   clearInterval(intervaloAtual);
@@ -280,7 +338,7 @@ function iniciarAplicativo() {
     try {
       const response = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT");
       const dados = await response.json();
-      const precoElement = document.querySelector("#criterios li:nth-child(3)");
+      const precoElement = document.querySelector("#criterios li:nth-child(5)");
       if (precoElement) {
         precoElement.textContent = `Preço: $${parseFloat(dados.lastPrice).toFixed(2)}`;
       }
