@@ -9,10 +9,10 @@ let leituraEmAndamento = false;
 let intervaloAtual = null;
 
 const API_ENDPOINTS = [
-  "https://api.binance.com/api/v3", // Principal
-  "https://api1.binance.com/api/v3", // Alternativo 1
-  "https://api2.binance.com/api/v3", // Alternativo 2
-  "https://api3.binance.com/api/v3"  // Alternativo 3
+  "https://api.binance.com/api/v3",
+  "https://api1.binance.com/api/v3",
+  "https://api2.binance.com/api/v3",
+  "https://api3.binance.com/api/v3"
 ];
 
 // =============================================
@@ -26,7 +26,6 @@ function atualizarRelogio() {
   }
 }
 
-// Fallback para múltiplos endpoints da Binance
 async function fetchComFallback(path) {
   for (let endpoint of API_ENDPOINTS) {
     try {
@@ -146,7 +145,19 @@ function analisarIndicadores(dados) {
     comando = "PUT";
   }
 
-  return { score: scoreConfianca, comando };
+  return {
+    score: scoreConfianca,
+    comando,
+    indicadores: {
+      RSI: rsi.toFixed(2),
+      MACD: macd.toFixed(2),
+      Stochastic: stochastic.toFixed(2),
+      Williams: williams.toFixed(2),
+      EMA21: ema21.toFixed(2),
+      EMA50: ema50.toFixed(2),
+      Volume: volumeAtual.toFixed(2)
+    }
+  };
 }
 
 // =============================================
@@ -158,7 +169,7 @@ async function fazerLeitura() {
 
   try {
     const dados = await fetchComFallback(`/klines?symbol=BTCUSDT&interval=1m&limit=150`);
-    const { score, comando } = analisarIndicadores(dados);
+    const { score, comando, indicadores } = analisarIndicadores(dados);
 
     const agora = new Date();
     ultimaAtualizacao = agora.toLocaleTimeString();
@@ -168,7 +179,7 @@ async function fazerLeitura() {
       if (ultimos.length > 10) ultimos.pop();
     }
 
-    atualizarInterface(comando, score);
+    atualizarInterface(comando, score, indicadores);
   } catch (error) {
     console.error("Erro ao obter ou processar dados:", error);
   }
@@ -179,17 +190,33 @@ async function fazerLeitura() {
 // =============================================
 // INTERFACE E TIMER
 // =============================================
-function atualizarInterface(comando, score) {
+function atualizarInterface(comando, score, indicadores = {}) {
   const direcaoEl = document.getElementById("direcao");
   const scoreEl = document.getElementById("score");
   const historicoEl = document.getElementById("historico");
+  const criteriosEl = document.getElementById("criterios");
 
-  if (direcaoEl) direcaoEl.textContent = `Sinal: ${comando}`;
-  if (scoreEl) scoreEl.textContent = `Confiança: ${score}%`;
+  if (direcaoEl) direcaoEl.textContent = `Comando Atual: ${comando}`;
+  if (scoreEl) scoreEl.textContent = `Score de Confiança: Confiança: ${score}%`;
   if (historicoEl) {
     historicoEl.innerHTML = ultimos.map(sinal =>
-      `<li>${sinal.horario} - ${sinal.direcao} - ${sinal.score}%</li>`
+      `<li>• ${sinal.horario} - ${sinal.direcao} – ${sinal.score}%</li>`
     ).join("");
+  }
+  if (criteriosEl) {
+    criteriosEl.innerHTML = `
+      RSI: ${indicadores.RSI} <br>
+      MACD: ${indicadores.MACD} <br>
+      Stochastic: ${indicadores.Stochastic} <br>
+      Williams: ${indicadores.Williams} <br>
+      EMA21: ${indicadores.EMA21} | EMA50: ${indicadores.EMA50} <br>
+      Volume: ${indicadores.Volume}
+    `;
+  }
+
+  const atualizacaoEl = document.getElementById("ultimaAtualizacao");
+  if (atualizacaoEl) {
+    atualizacaoEl.textContent = `Última Análise: ${ultimaAtualizacao}`;
   }
 }
 
@@ -202,7 +229,7 @@ function iniciarContagem() {
     timer--;
 
     const contagemEl = document.getElementById("contagem");
-    if (contagemEl) contagemEl.textContent = `Próxima leitura em: ${timer}s`;
+    if (contagemEl) contagemEl.textContent = `Próxima Leitura em: ${timer}s`;
 
     if (timer <= 0) {
       fazerLeitura();
