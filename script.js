@@ -19,26 +19,73 @@ const API_ENDPOINTS = [
 ];
 
 // =============================================
-// FUNÇÕES BÁSICAS
+// FUNÇÕES DE MÉDIAS MÓVEIS OTIMIZADAS
 // =============================================
-function atualizarRelogio() {
-  const agora = new Date();
-  const elementoHora = document.getElementById("hora");
-  if (elementoHora) {
-    elementoHora.textContent = agora.toLocaleTimeString("pt-BR", {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
+function calcularSMA(dados, periodo) {
+  if (!Array.isArray(dados) || dados.length < periodo) return null;
+  return dados.slice(-periodo).reduce((a, b) => a + b, 0) / periodo;
+}
+
+function calcularEMA(dados, periodo, pesoMultiplicador = 1) {
+  if (!Array.isArray(dados) || dados.length < periodo) return null;
+  
+  const k = (2 / (periodo + 1)) * pesoMultiplicador;
+  const ema = [];
+  let soma = 0;
+  
+  // SMA inicial
+  for (let i = 0; i < periodo; i++) {
+    soma += dados[i];
   }
+  ema[periodo - 1] = soma / periodo;
+
+  // EMA subsequente
+  for (let i = periodo; i < dados.length; i++) {
+    ema[i] = dados[i] * k + ema[i - 1] * (1 - k);
+  }
+  
+  return ema;
 }
 
-function formatarTimer(segundos) {
-  return `0:${segundos.toString().padStart(2, '0')}`;
+function calcularWMA(dados, periodo) {
+  if (!Array.isArray(dados) || dados.length < periodo) return null;
+  
+  const wma = [];
+  const pesos = Array.from({length: periodo}, (_, i) => i + 1);
+  const somaPesos = pesos.reduce((a, b) => a + b, 0);
+  
+  for (let i = periodo - 1; i < dados.length; i++) {
+    let somaPonderada = 0;
+    for (let j = 0; j < periodo; j++) {
+      somaPonderada += dados[i - j] * pesos[j];
+    }
+    wma[i] = somaPonderada / somaPesos;
+  }
+  
+  return wma;
+}
+
+function calcularHMA(dados, periodo) {
+  if (!Array.isArray(dados) || dados.length < Math.sqrt(periodo)) return null;
+  
+  const halfPeriod = Math.floor(periodo / 2);
+  const sqrtPeriod = Math.floor(Math.sqrt(periodo));
+  
+  const wmaHalf = calcularWMA(dados, halfPeriod);
+  const wmaFull = calcularWMA(dados, periodo);
+  
+  if (!wmaHalf || !wmaFull) return null;
+  
+  const hullRaw = [];
+  for (let i = 0; i < wmaHalf.length; i++) {
+    hullRaw.push(2 * wmaHalf[i] - wmaFull[i]);
+  }
+  
+  return calcularWMA(hullRaw, sqrtPeriod);
 }
 
 // =============================================
-// INDICADORES TÉCNICOS
+// OUTRAS FUNÇÕES DE INDICADORES
 // =============================================
 function calcularRSI(closes, periodo = 14) {
   if (!Array.isArray(closes) || closes.length < periodo + 1) return 50;
@@ -104,38 +151,14 @@ function calcularWilliams(highs, lows, closes, periodo = 14) {
   }
 }
 
-function calcularSerieEMA(dados, periodo) {
-  if (!Array.isArray(dados) || dados.length < periodo) return [];
-  
-  const k = 2 / (periodo + 1);
-  const emaArray = [];
-  let soma = 0;
-  
-  for (let i = 0; i < periodo; i++) {
-    soma += dados[i];
-  }
-  emaArray[periodo - 1] = soma / periodo;
-
-  for (let i = periodo; i < dados.length; i++) {
-    emaArray[i] = dados[i] * k + emaArray[i - 1] * (1 - k);
-  }
-  
-  return emaArray;
-}
-
-function calcularSMA(dados, periodo) {
-  if (!Array.isArray(dados) || dados.length < periodo) return null;
-  return dados.slice(-periodo).reduce((a, b) => a + b, 0) / periodo;
-}
-
 function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
   try {
     if (!Array.isArray(closes) || closes.length < lenta + sinal) {
       return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
     }
 
-    const emaRapida = calcularSerieEMA(closes, rapida);
-    const emaLenta = calcularSerieEMA(closes, lenta);
+    const emaRapida = calcularEMA(closes, rapida);
+    const emaLenta = calcularEMA(closes, lenta);
     
     if (!Array.isArray(emaRapida) || !Array.isArray(emaLenta)) {
       return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
@@ -148,7 +171,7 @@ function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
       macdLinha[i] = emaRapida[i] - emaLenta[i];
     }
 
-    const sinalLinha = calcularSerieEMA(macdLinha.slice(inicio), sinal);
+    const sinalLinha = calcularEMA(macdLinha.slice(inicio), sinal);
     
     const ultimoMACD = macdLinha[macdLinha.length - 1] || 0;
     const ultimoSinal = sinalLinha[sinalLinha.length - 1] || 0;
@@ -170,43 +193,50 @@ function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
 function calcularScoreConfianca(indicadores) {
   let score = 50;
 
+  // RSI
   if (indicadores.rsi < 30 || indicadores.rsi > 70) score += 15;
   else if (indicadores.rsi < 40 || indicadores.rsi > 60) score += 10;
 
+  // MACD
   if (Math.abs(indicadores.macd.histograma) > 0.3) score += 15;
   else if (Math.abs(indicadores.macd.histograma) > 0.1) score += 10;
 
-  if (indicadores.close > indicadores.ema21 && indicadores.ema21 > indicadores.ema50) score += 15;
+  // Tendência
+  if (indicadores.close > indicadores.ema9 && indicadores.ema9 > indicadores.ema21 && indicadores.ema21 > indicadores.ema200) score += 20;
+  else if (indicadores.close < indicadores.ema9 && indicadores.ema9 < indicadores.ema21 && indicadores.ema21 < indicadores.ema200) score += 20;
+  else if (indicadores.close > indicadores.ema21 && indicadores.ema21 > indicadores.ema50) score += 15;
   else if (indicadores.close < indicadores.ema21 && indicadores.ema21 < indicadores.ema50) score += 15;
 
-  if (indicadores.volume > indicadores.volumeMedia * 1.3) score += 10;
+  // Volume
+  if (indicadores.volume > indicadores.volumeMedia * 1.5) score += 10;
 
+  // Stochastic
   if (indicadores.stoch.k < 20 && indicadores.stoch.d < 20) score += 10;
   else if (indicadores.stoch.k > 80 && indicadores.stoch.d > 80) score += 10;
 
-  if (indicadores.williams < -80) score += 10;
-  else if (indicadores.williams > -20) score += 10;
+  // Williams
+  if (indicadores.williams < -85) score += 10;
+  else if (indicadores.williams > -15) score += 10;
 
   return Math.min(100, Math.max(0, score));
 }
 
 // =============================================
-// LÓGICA PRINCIPAL ATUALIZADA
+// LÓGICA PRINCIPAL
 // =============================================
 async function leituraReal() {
   const agora = Date.now();
   
-  // Bloqueia novas leituras se a última foi há menos de 5 segundos
   if (leituraEmAndamento || (agora - ultimoSinalTimestamp < 5000)) {
     return;
   }
   
   leituraEmAndamento = true;
-  bloqueioSinal = true; // Bloqueia temporariamente novos sinais
+  bloqueioSinal = true;
 
   try {
     const endpoint = API_ENDPOINTS[Math.floor(Math.random() * API_ENDPOINTS.length)];
-    const response = await fetch(`${endpoint}/klines?symbol=BTCUSDT&interval=1m&limit=150`);
+    const response = await fetch(`${endpoint}/klines?symbol=BTCUSDT&interval=1m&limit=200`);
     const dados = await response.json();
 
     const dadosValidos = dados.filter(v => Array.isArray(v) && v.length >= 6);
@@ -226,60 +256,64 @@ async function leituraReal() {
     // Calcula indicadores
     const rsi = calcularRSI(closes);
     const macd = calcularMACD(closes);
-    const sma9 = calcularSMA(closes, 9);
-    const ema21 = calcularSerieEMA(closes, 21).pop() || 0;
-    const ema50 = calcularSerieEMA(closes, 50).pop() || 0;
+    const ema9 = calcularEMA(closes, 9).pop() || 0;
+    const ema21 = calcularEMA(closes, 21).pop() || 0;
+    const ema50 = calcularEMA(closes, 50).pop() || 0;
+    const ema200 = calcularEMA(closes, 200).pop() || 0;
+    const hma = calcularHMA(closes, 9)?.pop() || 0;
     const volumeMedia = calcularSMA(volumes, 20) || 0;
     const stoch = calcularStochastic(highs, lows, closes);
     const williams = calcularWilliams(highs, lows, closes);
 
-    // Calcula score de confiança
-    const scoreConfianca = calcularScoreConfianca({
-      rsi, macd, close, ema21, ema50, volume, volumeMedia, stoch, williams
-    });
-
-    // TENDÊNCIA PRECISA (sincronizada com gráfico real)
+    // Calcula tendência
     const tendencia = 
-      close > ema21 && ema21 > ema50 && macd.histograma > 0 ? "ALTA" :
-      close < ema21 && ema21 < ema50 && macd.histograma < 0 ? "BAIXA" :
+      close > ema9 && ema9 > ema21 && ema21 > ema200 ? "ALTA_FORTE" :
+      close < ema9 && ema9 < ema21 && ema21 < ema200 ? "BAIXA_FORTE" :
+      close > ema21 && ema21 > ema50 ? "ALTA" :
+      close < ema21 && ema21 < ema50 ? "BAIXA" :
       "LATERAL";
 
-    // Sistema de pontos dinâmico
+    // Sistema de pontos
     let pontosCALL = 0, pontosPUT = 0;
     
-    // RSI com limiares ajustados
+    // RSI
     if (rsi < 35) pontosCALL += 1.0;
     if (rsi > 65) pontosPUT += 1.0;
     
-    // MACD alinhado com tendência tem peso maior
-    if (macd.histograma > 0.1) pontosCALL += (tendencia === "ALTA" ? 2.0 : 1.0);
-    if (macd.histograma < -0.1) pontosPUT += (tendencia === "BAIXA" ? 2.0 : 1.0);
+    // MACD
+    if (macd.histograma > 0.1) pontosCALL += (tendencia.includes("ALTA") ? 2.0 : 1.0);
+    if (macd.histograma < -0.1) pontosPUT += (tendencia.includes("BAIXA") ? 2.0 : 1.0);
     
-    // Médias móveis com peso condicional
-    if (close > ema21) pontosCALL += (tendencia === "ALTA" ? 1.2 : 0.6);
-    if (close < ema21) pontosPUT += (tendencia === "BAIXA" ? 1.2 : 0.6);
+    // Médias
+    if (close > hma && close > ema9) pontosCALL += (tendencia.includes("ALTA") ? 1.5 : 0.8);
+    if (close < hma && close < ema9) pontosPUT += (tendencia.includes("BAIXA") ? 1.5 : 0.8);
     
-    // Volume com ajuste dinâmico
+    // Volume
     if (volume > volumeMedia * 1.5) {
-      if (tendencia === "ALTA") pontosCALL += 1.5;
-      else if (tendencia === "BAIXA") pontosPUT += 1.5;
+      if (tendencia.includes("ALTA")) pontosCALL += 1.5;
+      else if (tendencia.includes("BAIXA")) pontosPUT += 1.5;
     }
     
-    // Stochastic com filtro de tendência
-    if (stoch.k < 20 && stoch.d < 20 && tendencia !== "BAIXA") pontosCALL += 1.0;
-    if (stoch.k > 80 && stoch.d > 80 && tendencia !== "ALTA") pontosPUT += 1.0;
+    // Stochastic
+    if (stoch.k < 20 && stoch.d < 20 && !tendencia.includes("BAIXA")) pontosCALL += 1.0;
+    if (stoch.k > 80 && stoch.d > 80 && !tendencia.includes("ALTA")) pontosPUT += 1.0;
     
-    // Williams %R ajustado
-    if (williams < -85) pontosCALL += (tendencia === "ALTA" ? 1.2 : 0.6);
-    if (williams > -15) pontosPUT += (tendencia === "BAIXA" ? 1.2 : 0.6);
+    // Williams
+    if (williams < -85) pontosCALL += (tendencia.includes("ALTA") ? 1.2 : 0.6);
+    if (williams > -15) pontosPUT += (tendencia.includes("BAIXA") ? 1.2 : 0.6);
 
-    // Decisão final com filtros rigorosos
+    // Score de confiança
+    const scoreConfianca = calcularScoreConfianca({
+      rsi, macd, close, ema9, ema21, ema50, ema200, hma, volume, volumeMedia, stoch, williams
+    });
+
+    // Decisão final
     let comando = "ESPERAR";
     const volumeConfirmado = volume > volumeMedia * 1.3;
     
-    if (pontosCALL >= 3.0 && scoreConfianca >= 60 && (tendencia === "ALTA" || volumeConfirmado)) {
+    if (pontosCALL >= 3.5 && scoreConfianca >= 65 && (tendencia.includes("ALTA") || volumeConfirmado)) {
       comando = "CALL";
-    } else if (pontosPUT >= 3.0 && scoreConfianca >= 60 && (tendencia === "BAIXA" || volumeConfirmado)) {
+    } else if (pontosPUT >= 3.5 && scoreConfianca >= 65 && (tendencia.includes("BAIXA") || volumeConfirmado)) {
       comando = "PUT";
     }
 
@@ -290,23 +324,22 @@ async function leituraReal() {
     document.getElementById("hora").textContent = ultimaAtualizacao;
 
     document.getElementById("criterios").innerHTML = `
-      <li>Tendência: ${tendencia} (${tendencia === "ALTA" ? "CALL" : tendencia === "BAIXA" ? "PUT" : "ANALISAR"})</li>
+      <li>Tendência: ${tendencia}</li>
       <li>RSI: ${rsi.toFixed(2)} ${rsi < 35 ? '🔻' : rsi > 65 ? '🔺' : ''}</li>
       <li>MACD: ${macd.histograma.toFixed(4)} ${macd.histograma > 0 ? '🟢' : '🔴'}</li>
       <li>Stochastic: K ${stoch.k.toFixed(2)} / D ${stoch.d.toFixed(2)}</li>
       <li>Williams: ${williams.toFixed(2)}</li>
       <li>Preço: $${close.toFixed(2)}</li>
-      <li>Médias: SMA9 ${sma9?.toFixed(2)} | EMA21 ${ema21.toFixed(2)} | EMA50 ${ema50.toFixed(2)}</li>
+      <li>Médias: HMA9 ${hma?.toFixed(2)} | EMA9 ${ema9.toFixed(2)} | EMA21 ${ema21.toFixed(2)} | EMA50 ${ema50.toFixed(2)} | EMA200 ${ema200.toFixed(2)}</li>
       <li>Volume: ${volume.toFixed(2)} vs Média ${volumeMedia.toFixed(2)}</li>
     `;
 
-    // Atualiza histórico se houve mudança de comando
+    // Atualiza histórico se houve mudança
     if (ultimos.length === 0 || !ultimos[0].includes(comando)) {
       ultimos.unshift(`${ultimaAtualizacao} - ${comando} (${scoreConfianca}%)`);
       if (ultimos.length > 5) ultimos.pop();
       document.getElementById("ultimos").innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
       
-      // Atualiza timestamp do último sinal válido
       if (comando !== "ESPERAR") {
         ultimoSinalTimestamp = agora;
       }
@@ -318,7 +351,6 @@ async function leituraReal() {
     document.getElementById("score").textContent = "Confiança: 0%";
   } finally {
     leituraEmAndamento = false;
-    // Libera o bloqueio após 5 segundos
     setTimeout(() => { bloqueioSinal = false; }, 5000);
   }
 }
