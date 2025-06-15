@@ -2,15 +2,13 @@
 // CONFIGURAÇÕES GLOBAIS (ENCAPSULADAS)
 // =============================================
 const state = {
-  win: 0,
-  loss: 0,
   ultimos: [],
   timer: 60,
   ultimaAtualizacao: "",
   leituraEmAndamento: false,
   intervaloAtual: null,
   tentativasErro: 0,
-  dadosHistoricos: []
+  ultimoSinal: null
 };
 
 const CONFIG = {
@@ -31,13 +29,15 @@ const CONFIG = {
     MACD_LENTA: 26,
     MACD_SINAL: 9
   },
-  PESOS: {
-    RSI: 1.2,
-    MACD: 1.5,
-    EMA: 0.8,
-    VOLUME: 1.0,
-    STOCH: 1.0,
-    WILLIAMS: 0.8
+  LIMIARES: {
+    SCORE_ALTO: 65,
+    SCORE_MEDIO: 55,
+    RSI_OVERBOUGHT: 70,
+    RSI_OVERSOLD: 30,
+    STOCH_OVERBOUGHT: 80,
+    STOCH_OVERSOLD: 20,
+    WILLIAMS_OVERBOUGHT: -20,
+    WILLIAMS_OVERSOLD: -80
   }
 };
 
@@ -60,23 +60,25 @@ function atualizarRelogio() {
 }
 
 // =============================================
-// INDICADORES TÉCNICOS (COM CACHE)
+// INDICADORES TÉCNICOS (REVISADOS)
 // =============================================
 const calcularMedia = {
   simples: (dados, periodo) => {
-    if (!Array.isArray(dados)) return null;
+    if (!Array.isArray(dados) || dados.length < periodo) return null;
     const slice = dados.slice(-periodo);
-    return slice.reduce((a, b) => a + b, 0) / slice.length;
+    return slice.reduce((a, b) => a + b, 0) / periodo;
   },
 
   exponencial: (dados, periodo) => {
     if (!Array.isArray(dados) || dados.length < periodo) return [];
     
     const k = 2 / (periodo + 1);
-    const emaArray = [calcularMedia.simples(dados.slice(0, periodo), periodo)];
+    let ema = calcularMedia.simples(dados.slice(0, periodo), periodo);
+    const emaArray = [ema];
     
     for (let i = periodo; i < dados.length; i++) {
-      emaArray.push(dados[i] * k + emaArray[i - periodo] * (1 - k));
+      ema = dados[i] * k + ema * (1 - k);
+      emaArray.push(ema);
     }
     
     return emaArray;
@@ -87,16 +89,29 @@ function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {
   if (!Array.isArray(closes) || closes.length < periodo + 1) return 50;
   
   let gains = 0, losses = 0;
+  
+  // Cálculo inicial
   for (let i = 1; i <= periodo; i++) {
     const diff = closes[i] - closes[i - 1];
     if (diff > 0) gains += diff;
     else losses += Math.abs(diff);
   }
 
-  const avgGain = gains / periodo;
-  const avgLoss = losses / periodo || 0.001;
+  let avgGain = gains / periodo;
+  let avgLoss = losses / periodo || 0.001;
+
+  // Cálculo suavizado
+  for (let i = periodo + 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? Math.abs(diff) : 0;
+    
+    avgGain = (avgGain * (periodo - 1) + gain) / periodo;
+    avgLoss = (avgLoss * (periodo - 1) + loss) / periodo;
+  }
+
+  if (avgLoss <= 0) return 100;
   const rs = avgGain / avgLoss;
-  
   return 100 - (100 / (1 + rs));
 }
 
@@ -110,10 +125,14 @@ function calcularStochastic(highs, lows, closes, periodo = CONFIG.PERIODOS.STOCH
       const sliceLow = lows.slice(i-periodo+1, i+1);
       const highestHigh = Math.max(...sliceHigh);
       const lowestLow = Math.min(...sliceLow);
-      kValues.push(((closes[i] - lowestLow) / (highestHigh - lowestLow)) * 100);
+      const range = highestHigh - lowestLow;
+      kValues.push(range > 0 ? ((closes[i] - lowestLow) / range) * 100 : 50);
     }
     
-    const dValues = kValues.length >= 3 ? calcularMedia.simples(kValues.slice(-3), 3) : 50;
+    const dValues = kValues.length >= 3 ? 
+      calcularMedia.simples(kValues.slice(-3), 3) : 
+      50;
+    
     return {
       k: kValues[kValues.length-1] || 50,
       d: dValues || 50
@@ -132,8 +151,9 @@ function calcularWilliams(highs, lows, closes, periodo = CONFIG.PERIODOS.WILLIAM
     const sliceLow = lows.slice(-periodo);
     const highestHigh = Math.max(...sliceHigh);
     const lowestLow = Math.min(...sliceLow);
+    const range = highestHigh - lowestLow;
     
-    return ((highestHigh - closes[closes.length-1]) / (highestHigh - lowestLow)) * -100;
+    return range > 0 ? ((highestHigh - closes[closes.length-1]) / range) * -100 : 0;
   } catch (e) {
     console.error("Erro no cálculo Williams:", e);
     return 0;
@@ -151,7 +171,9 @@ function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA,
     const emaRapida = calcularMedia.exponencial(closes, rapida);
     const emaLenta = calcularMedia.exponencial(closes, lenta);
     
-    const macdLinha = emaRapida.map((val, idx) => val - emaLenta[idx]).slice(lenta - rapida);
+    // Ajuste para alinhar os arrays
+    const startIdx = lenta - rapida;
+    const macdLinha = emaRapida.slice(startIdx).map((val, idx) => val - emaLenta[idx]);
     const sinalLinha = calcularMedia.exponencial(macdLinha, sinal);
     
     const ultimoMACD = macdLinha[macdLinha.length - 1] || 0;
@@ -169,7 +191,7 @@ function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA,
 }
 
 // =============================================
-// SISTEMA DE DECISÃO (APRIMORADO)
+// SISTEMA DE DECISÃO (REVISADO)
 // =============================================
 function avaliarTendencia(closes, emaCurta, emaLonga) {
   if (closes.length < 3) return "NEUTRA";
@@ -177,18 +199,21 @@ function avaliarTendencia(closes, emaCurta, emaLonga) {
   const ultimoClose = closes[closes.length - 1];
   const penultimoClose = closes[closes.length - 2];
   
-  if (ultimoClose > emaCurta && emaCurta > emaLonga && ultimoClose > penultimoClose) {
-    return "FORTE_ALTA";
-  }
-  if (ultimoClose < emaCurta && emaCurta < emaLonga && ultimoClose < penultimoClose) {
-    return "FORTE_BAIXA";
-  }
+  // Filtro de confirmação de tendência
   if (ultimoClose > emaCurta && emaCurta > emaLonga) {
+    if (ultimoClose > penultimoClose && penultimoClose > closes[closes.length - 3]) {
+      return "FORTE_ALTA";
+    }
     return "ALTA";
   }
+  
   if (ultimoClose < emaCurta && emaCurta < emaLonga) {
+    if (ultimoClose < penultimoClose && penultimoClose < closes[closes.length - 3]) {
+      return "FORTE_BAIXA";
+    }
     return "BAIXA";
   }
+  
   return "NEUTRA";
 }
 
@@ -196,51 +221,72 @@ function calcularScore(indicadores) {
   let score = 50;
 
   // RSI
-  if (indicadores.rsi < 30) score += CONFIG.PESOS.RSI * 1.5;
-  else if (indicadores.rsi > 70) score -= CONFIG.PESOS.RSI * 1.5;
-  else if (indicadores.rsi < 40) score += CONFIG.PESOS.RSI;
-  else if (indicadores.rsi > 60) score -= CONFIG.PESOS.RSI;
+  if (indicadores.rsi < CONFIG.LIMIARES.RSI_OVERSOLD) {
+    score += 20; // Forte oversold
+  } else if (indicadores.rsi > CONFIG.LIMIARES.RSI_OVERBOUGHT) {
+    score -= 20; // Forte overbought
+  } else if (indicadores.rsi < 40) {
+    score += 10; // Potencial oversold
+  } else if (indicadores.rsi > 60) {
+    score -= 10; // Potencial overbought
+  }
 
   // MACD
-  if (indicadores.macd.histograma > 0.2) score += CONFIG.PESOS.MACD;
-  else if (indicadores.macd.histograma < -0.2) score -= CONFIG.PESOS.MACD;
-  else if (indicadores.macd.histograma > 0.1) score += CONFIG.PESOS.MACD * 0.5;
-  else if (indicadores.macd.histograma < -0.1) score -= CONFIG.PESOS.MACD * 0.5;
+  if (indicadores.macd.histograma > 0) {
+    score += (indicadores.macd.histograma * 10); // Peso proporcional ao histograma
+  } else {
+    score += (indicadores.macd.histograma * 10); // Peso negativo se histograma negativo
+  }
 
   // Tendência
-  if (indicadores.tendencia.includes("FORTE")) {
-    score += indicadores.tendencia.includes("ALTA") ? 10 : -10;
-  }
+  if (indicadores.tendencia === "FORTE_ALTA") score += 15;
+  else if (indicadores.tendencia === "ALTA") score += 8;
+  else if (indicadores.tendencia === "FORTE_BAIXA") score -= 15;
+  else if (indicadores.tendencia === "BAIXA") score -= 8;
 
   // Volume
   if (indicadores.volume > indicadores.volumeMedia * 1.5) {
-    score += (indicadores.tendencia.includes("ALTA") ? 1 : -1) * CONFIG.PESOS.VOLUME;
+    score += (indicadores.tendencia.includes("ALTA") ? 10 : -10);
   }
 
   // Estocástico
-  if (indicadores.stoch.k < 20 && indicadores.stoch.d < 20) score += CONFIG.PESOS.STOCH;
-  if (indicadores.stoch.k > 80 && indicadores.stoch.d > 80) score -= CONFIG.PESOS.STOCH;
+  if (indicadores.stoch.k < CONFIG.LIMIARES.STOCH_OVERSOLD && 
+      indicadores.stoch.d < CONFIG.LIMIARES.STOCH_OVERSOLD) {
+    score += 15;
+  }
+  if (indicadores.stoch.k > CONFIG.LIMIARES.STOCH_OVERBOUGHT && 
+      indicadores.stoch.d > CONFIG.LIMIARES.STOCH_OVERBOUGHT) {
+    score -= 15;
+  }
 
   // Williams
-  if (indicadores.williams < -80) score += CONFIG.PESOS.WILLIAMS;
-  if (indicadores.williams > -20) score -= CONFIG.PESOS.WILLIAMS;
+  if (indicadores.williams < CONFIG.LIMIARES.WILLIAMS_OVERSOLD) score += 12;
+  if (indicadores.williams > CONFIG.LIMIARES.WILLIAMS_OVERBOUGHT) score -= 12;
+
+  // Evitar sinais repetidos
+  if (state.ultimoSinal) {
+    score += (state.ultimoSinal === "CALL" ? -5 : 5);
+  }
 
   return Math.min(100, Math.max(0, Math.round(score)));
 }
 
 function determinarSinal(score, tendencia) {
-  if (score >= 60) {
+  if (score >= CONFIG.LIMIARES.SCORE_ALTO) {
     return tendencia.includes("ALTA") ? "CALL" : "PUT";
   }
-  if (score >= 55) {
-    if (tendencia === "NEUTRA") return "CALL";
+  if (score >= CONFIG.LIMIARES.SCORE_MEDIO) {
+    if (tendencia === "NEUTRA") {
+      // Em tendência neutra, só opera se o score for muito alto
+      return score > 70 ? "CALL" : "ESPERAR";
+    }
     return tendencia.includes("ALTA") ? "CALL" : "PUT";
   }
   return "ESPERAR";
 }
 
 // =============================================
-// CORE DO SISTEMA (OTIMIZADO)
+// CORE DO SISTEMA (REVISADO)
 // =============================================
 async function obterDadosBinance() {
   for (const endpoint of CONFIG.API_ENDPOINTS) {
@@ -264,43 +310,39 @@ async function analisarMercado() {
 
   try {
     const dados = await obterDadosBinance();
-    state.dadosHistoricos = dados;
-
     const velaAtual = dados[dados.length - 1];
-    const close = parseFloat(velaAtual[4]);
-    const high = parseFloat(velaAtual[2]);
-    const low = parseFloat(velaAtual[3]);
-    const volume = parseFloat(velaAtual[5]);
-
+    
+    // Processamento dos dados
     const closes = dados.map(v => parseFloat(v[4]));
     const highs = dados.map(v => parseFloat(v[2]));
     const lows = dados.map(v => parseFloat(v[3]));
     const volumes = dados.map(v => parseFloat(v[5]));
 
-    // Calcula indicadores
+    // Cálculo dos indicadores
     const ema21Array = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_CURTA);
     const ema50Array = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_LONGA);
-    
+    const ema21 = ema21Array[ema21Array.length - 1] || 0;
+    const ema50 = ema50Array[ema50Array.length - 1] || 0;
+
     const indicadores = {
       rsi: calcularRSI(closes),
       macd: calcularMACD(closes),
       sma9: calcularMedia.simples(closes, 9),
-      ema21: ema21Array[ema21Array.length - 1] || 0,
-      ema50: ema50Array[ema50Array.length - 1] || 0,
-      volume,
+      ema21,
+      ema50,
+      volume: parseFloat(velaAtual[5]),
       volumeMedia: calcularMedia.simples(volumes, CONFIG.PERIODOS.SMA_VOLUME),
       stoch: calcularStochastic(highs, lows, closes),
       williams: calcularWilliams(highs, lows, closes),
-      close,
-      tendencia: avaliarTendencia(closes, 
-        ema21Array[ema21Array.length - 1] || 0,
-        ema50Array[ema50Array.length - 1] || 0)
+      close: parseFloat(velaAtual[4]),
+      tendencia: avaliarTendencia(closes, ema21, ema50)
     };
 
     const score = calcularScore(indicadores);
     const sinal = determinarSinal(score, indicadores.tendencia);
+    state.ultimoSinal = sinal !== "ESPERAR" ? sinal : state.ultimoSinal;
 
-    // Atualiza interface
+    // Atualização da interface
     state.ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR");
     document.getElementById("comando").textContent = sinal;
     document.getElementById("score").textContent = `Confiança: ${score}%`;
@@ -368,7 +410,7 @@ function sincronizarTimer() {
 }
 
 // =============================================
-// INICIALIZAÇÃO (MANTIDA)
+// INICIALIZAÇÃO
 // =============================================
 function iniciarAplicativo() {
   setInterval(atualizarRelogio, 1000);
