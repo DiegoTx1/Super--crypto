@@ -1,5 +1,5 @@
 // =============================================
-// CONFIGURAÇÕES GLOBAIS (ORIGINAL)
+// CONFIGURAÇÕES GLOBAIS (REVISADAS)
 // =============================================
 const state = {
   ultimos: [],
@@ -58,7 +58,7 @@ const CONFIG = {
 };
 
 // =============================================
-// FUNÇÕES UTILITÁRIAS (ORIGINAL)
+// FUNÇÕES UTILITÁRIAS (CORRIGIDAS)
 // =============================================
 function formatarTimer(segundos) {
   return `0:${segundos.toString().padStart(2, '0')}`;
@@ -90,7 +90,7 @@ function atualizarInterface(sinal, score) {
 }
 
 // =============================================
-// INDICADORES TÉCNICOS (ORIGINAL)
+// INDICADORES TÉCNICOS (REVISADOS)
 // =============================================
 const calcularMedia = {
   simples: (dados, periodo) => {
@@ -215,7 +215,7 @@ function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA,
 }
 
 // =============================================
-// SISTEMA DE DECISÃO (ORIGINAL)
+// SISTEMA DE DECISÃO (REVISADO)
 // =============================================
 function avaliarTendencia(closes, emaCurta, emaLonga) {
   if (closes.length < CONFIG.PERIODOS.VELAS_CONFIRMACAO) return "NEUTRA";
@@ -267,7 +267,7 @@ function calcularScore(indicadores) {
   else if (indicadores.rsi > 60) score -= 12 * CONFIG.PESOS.RSI;
 
   // MACD
-  score += (Math.min(Math.max(indicadores.macd.histograma * 15, -20), 20) * CONFIG.PESOS.MACD;
+  score += (Math.min(Math.max(indicadores.macd.histograma * 15, -20), 20) * CONFIG.PESOS.MACD);
 
   // Tendência
   switch(indicadores.tendencia) {
@@ -326,7 +326,7 @@ function determinarSinal(score, tendencia) {
 }
 
 // =============================================
-// CORE DO SISTEMA (ORIGINAL)
+// CORE DO SISTEMA (OTIMIZADO)
 // =============================================
 async function obterDadosBinance() {
   for (const endpoint of CONFIG.API_ENDPOINTS) {
@@ -422,7 +422,7 @@ async function analisarMercado() {
 }
 
 // =============================================
-// CONTROLE DE TEMPO (ORIGINAL)
+// CONTROLE DE TEMPO (REVISADO)
 // =============================================
 function sincronizarTimer() {
   clearInterval(state.intervaloAtual);
@@ -452,9 +452,10 @@ function sincronizarTimer() {
 }
 
 // =============================================
-// INICIALIZAÇÃO (ORIGINAL)
+// INICIALIZAÇÃO (SEGURA)
 // =============================================
 function iniciarAplicativo() {
+  // Verifica se todos os elementos da interface existem
   const elementosNecessarios = ['comando', 'score', 'hora', 'timer', 'criterios', 'ultimos'];
   const elementosFaltantes = elementosNecessarios.filter(id => !document.getElementById(id));
   
@@ -467,6 +468,7 @@ function iniciarAplicativo() {
   sincronizarTimer();
   analisarMercado();
 
+  // Atualização de preço em tempo real
   setInterval(async () => {
     try {
       const response = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT");
@@ -482,6 +484,7 @@ function iniciarAplicativo() {
   }, 5000);
 }
 
+// Inicialização segura
 if (document.readyState === 'complete') {
   iniciarAplicativo();
 } else {
