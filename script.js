@@ -1,8 +1,8 @@
 // =============================================
 // CONFIGURAÇÕES GLOBAIS
 // =============================================
-const LIMIAR_DECISAO = 2.5;  // Ponto mínimo para CALL/PUT
-const CONFIANCA_MINIMA = 50;  // Score mínimo para operar
+const LIMIAR_DECISAO = 2.5;
+const CONFIANCA_MINIMA = 50;
 
 let win = 0, loss = 0;
 let ultimos = [];
@@ -30,10 +30,10 @@ function atualizarRelogio() {
 }
 
 // =============================================
-// INDICADORES TÉCNICOS (OTIMIZADOS)
+// INDICADORES TÉCNICOS (CORRIGIDOS)
 // =============================================
 function calcularMedia(dados, periodo, tipo = 'SMA') {
-  if (!Array.isArray(dados) return null;
+  if (!Array.isArray(dados)) return null;
   
   if (tipo === 'SMA') {
     if (dados.length < periodo) return null;
@@ -41,13 +41,14 @@ function calcularMedia(dados, periodo, tipo = 'SMA') {
   } 
   else if (tipo === 'EMA') {
     const k = 2 / (periodo + 1);
-    const ema = [dados.slice(0, periodo).reduce((a, b) => a + b, 0) / periodo];
+    let ema = dados.slice(0, periodo).reduce((a, b) => a + b, 0) / periodo;
     
     for (let i = periodo; i < dados.length; i++) {
-      ema.push(dados[i] * k + ema[i - periodo] * (1 - k));
+      ema = dados[i] * k + ema * (1 - k);
     }
-    return ema.pop();
+    return ema;
   }
+  return null;
 }
 
 function calcularRSI(closes, periodo = 14) {
@@ -79,15 +80,32 @@ function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
   };
 }
 
+function calcularScoreConfianca(indicadores) {
+  let score = 50;
+  const { rsi, macd, volume, volumeMedia } = indicadores;
+
+  // RSI (0-20 pontos)
+  if (rsi < 30 || rsi > 70) score += 20;
+  else if (rsi < 40 || rsi > 60) score += 10;
+
+  // MACD (0-30 pontos)
+  score += Math.abs(macd.histograma) * 10;
+
+  // Volume (0-10 pontos)
+  if (volume > volumeMedia * 1.2) score += 10;
+
+  return Math.min(100, Math.max(0, score));
+}
+
 // =============================================
-// LÓGICA PRINCIPAL (SIMPLIFICADA)
+// LÓGICA PRINCIPAL (FUNCIONAL)
 // =============================================
 async function leituraReal() {
   if (leituraEmAndamento) return;
   leituraEmAndamento = true;
 
   try {
-    const endpoint = API_ENDPOINTS.find(url => fetch(url).then(res => res.ok).catch(() => false));
+    const endpoint = API_ENDPOINTS[0]; // Usa primeiro endpoint (simplificado)
     const response = await fetch(`${endpoint}/klines?symbol=BTCUSDT&interval=1m&limit=150`);
     const dados = await response.json();
 
@@ -98,23 +116,21 @@ async function leituraReal() {
     const closes = dados.map(v => parseFloat(v[4]));
     const volumes = dados.map(v => parseFloat(v[5]));
 
-    // Indicadores
+    // Calcula indicadores
     const rsi = calcularRSI(closes);
     const macd = calcularMACD(closes);
     const ema21 = calcularMedia(closes, 21, 'EMA');
     const ema50 = calcularMedia(closes, 50, 'EMA');
     const volumeMedia = calcularMedia(volumes, 20);
 
-    // Score de Confiança
+    // Score e decisão
     const score = calcularScoreConfianca({ rsi, macd, close, ema21, ema50, volume, volumeMedia });
-
-    // Decisão
     let comando = "ESPERAR";
     if (score >= CONFIANCA_MINIMA) {
       comando = macd.histograma > 0 ? "CALL" : "PUT";
     }
 
-    // UI
+    // Atualiza UI
     document.getElementById("comando").textContent = comando;
     document.getElementById("score").textContent = `Confiança: ${score}%`;
     ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR");
@@ -151,7 +167,7 @@ function iniciarAplicativo() {
   leituraReal();
 }
 
-// Start
+// Inicia quando o DOM estiver pronto
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', iniciarAplicativo);
 } else {
