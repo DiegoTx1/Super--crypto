@@ -189,7 +189,7 @@ function calcularScoreConfianca(indicadores) {
 }
 
 // =============================================
-// LÓGICA PRINCIPAL (COM ADIÇÃO DA LINHA DE TENDÊNCIA)
+// LÓGICA PRINCIPAL (COM CORREÇÃO MÍNIMA)
 // =============================================
 async function leituraReal() {
   if (leituraEmAndamento) return;
@@ -252,32 +252,32 @@ async function leituraReal() {
     if (williams < -80) pontosCALL += 0.8;
     if (williams > -20) pontosPUT += 0.8;
 
-    // Decisão (original)
-    let comando = "ESPERAR";
-    if (pontosCALL >= 2.5 && scoreConfianca >= 50) comando = "CALL";
-    else if (pontosPUT >= 2.5 && scoreConfianca >= 50) comando = "PUT";
-
-    // ======================================
-    // ÚNICA ADIÇÃO: LINHA DE TENDÊNCIA
-    // ======================================
+    // Calcula tendência (original)
     const tendencia = 
       close > ema50 && ema21 > ema50 ? "ALTA" :
       close < ema50 && ema21 < ema50 ? "BAIXA" :
       "LATERAL";
     
-    const entradaRecomendada = 
-      tendencia === "ALTA" ? "CALL" :
-      tendencia === "BAIXA" ? "PUT" :
-      "ANALISAR";
+    // CORREÇÃO: Adicionar filtro de tendência
+    if (tendencia === "ALTA" && pontosPUT > pontosCALL) {
+      pontosCALL += 1.5; // Adiciona peso extra para CALL quando em tendência de alta
+    } else if (tendencia === "BAIXA" && pontosCALL > pontosPUT) {
+      pontosPUT += 1.5; // Adiciona peso extra para PUT quando em tendência de baixa
+    }
 
-    // Atualiza interface (com linha adicional)
+    // Decisão (original)
+    let comando = "ESPERAR";
+    if (pontosCALL >= 2.5 && scoreConfianca >= 50) comando = "CALL";
+    else if (pontosPUT >= 2.5 && scoreConfianca >= 50) comando = "PUT";
+
+    // Atualiza interface (original)
     ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR");
     document.getElementById("comando").textContent = comando;
     document.getElementById("score").textContent = `Confiança: ${scoreConfianca}%`;
     document.getElementById("hora").textContent = ultimaAtualizacao;
 
     document.getElementById("criterios").innerHTML = `
-      <li>Tendência: ${tendencia} (${entradaRecomendada})</li>
+      <li>Tendência: ${tendencia} (${tendencia === "ALTA" ? "CALL" : tendencia === "BAIXA" ? "PUT" : "ANALISAR"})</li>
       <li>RSI: ${rsi.toFixed(2)} ${rsi < 40 ? '🔻' : rsi > 60 ? '🔺' : ''}</li>
       <li>MACD: ${macd.histograma.toFixed(4)} ${macd.histograma > 0 ? '🟢' : '🔴'}</li>
       <li>Stochastic: K ${stoch.k.toFixed(2)} / D ${stoch.d.toFixed(2)}</li>
@@ -337,7 +337,7 @@ function iniciarAplicativo() {
     try {
       const response = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT");
       const dados = await response.json();
-      const precoElement = document.querySelector("#criterios li:nth-child(6)"); // Ajustado para a nova posição
+      const precoElement = document.querySelector("#criterios li:nth-child(6)");
       if (precoElement) {
         precoElement.textContent = `Preço: $${parseFloat(dados.lastPrice).toFixed(2)}`;
       }
