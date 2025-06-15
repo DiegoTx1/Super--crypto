@@ -1,184 +1,155 @@
-// =============================================
-// CONFIGURAÇÕES GLOBAIS
-// =============================================
-let win = 0, loss = 0;
-let ultimos = [];
-let timer = 60;
-let ultimaAtualizacao = "";
-let leituraEmAndamento = false;
-let intervaloAtual = null;
+// ================= CONFIGURAÇÕES GLOBAIS =================
+const config = {
+  paridade: "BTCUSDT",       // Paridade espelhada no Cripto IDX
+  intervalo: "1m",           // Timeframe (1min para Cripto IDX)
+  delayStockity: 2000,       // Delay de sincronização (2s)
+  limiarRSI: { baixo: 35, alto: 65 },
+  limiarStoch: { baixo: 25, alto: 75 },
+  filtroLateralidade: 0.5    // Filtro de EMA (0.5%)
+};
 
-const API_ENDPOINTS = [
-  "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=1000",
-  "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=800",
-  "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=500",
-];
+let historicoSinais = [];
+let emOperacao = false;
 
-// =============================================
-// FUNÇÕES BÁSICAS
-// =============================================
-function formatarTimer(segundos) {
-  return `00:${segundos.toString().padStart(2, "0")}`;
-}
-
-function calcularMedia(array) {
-  const soma = array.reduce((a, b) => a + b, 0);
-  return soma / array.length;
-}
-
-function calcularEMA(precos, periodo) {
-  const k = 2 / (periodo + 1);
-  let emaArray = [precos[0]];
-  for (let i = 1; i < precos.length; i++) {
-    emaArray.push(precos[i] * k + emaArray[i - 1] * (1 - k));
-  }
-  return emaArray;
-}
-
+// ================= FUNÇÕES DE ANÁLISE TÉCNICA =================
 function calcularRSI(closes, periodo = 14) {
-  let ganhos = 0;
-  let perdas = 0;
+  let gains = 0, losses = 0;
   for (let i = 1; i <= periodo; i++) {
-    const diferenca = closes[i] - closes[i - 1];
-    if (diferenca >= 0) ganhos += diferenca;
-    else perdas -= diferenca;
+    const diff = closes[i] - closes[i-1];
+    diff > 0 ? gains += diff : losses += Math.abs(diff);
   }
-  const rs = ganhos / perdas;
-  return 100 - 100 / (1 + rs);
+  const rs = (gains/periodo)/(losses/periodo || 0.001);
+  return 100 - (100/(1 + rs));
 }
 
-function calcularMACD(closes, curto = 12, longo = 26, sinal = 9) {
-  const emaCurto = calcularEMA(closes, curto);
-  const emaLongo = calcularEMA(closes, longo);
-  const macdLinha = emaCurto.map((val, idx) => val - emaLongo[idx]);
-  const inicio = macdLinha.findIndex(v => !isNaN(v));
-  const sinalLinha = calcularEMA(macdLinha.slice(inicio).filter(v => v !== undefined), sinal);
-  const histograma = macdLinha.slice(-sinalLinha.length).map((val, idx) => val - sinalLinha[idx]);
+function calcularStochastic(highs, lows, closes, periodo = 14) {
+  const kValues = [];
+  for (let i = periodo-1; i < closes.length; i++) {
+    const maxHigh = Math.max(...highs.slice(i-periodo+1, i+1));
+    const minLow = Math.min(...lows.slice(i-periodo+1, i+1));
+    kValues.push(((closes[i] - minLow)/(maxHigh - minLow)) * 100);
+  }
   return {
-    macd: macdLinha[macdLinha.length - 1],
-    sinal: sinalLinha[sinalLinha.length - 1],
-    histograma: histograma[histograma.length - 1]
+    k: kValues[kValues.length-1] || 50,
+    d: calcularSMA(kValues.slice(-3), 3) || 50
   };
 }
 
-function calcularEstocastico(closes, low, high, periodo = 14) {
-  const max = Math.max(...high.slice(-periodo));
-  const min = Math.min(...low.slice(-periodo));
-  return ((closes[closes.length - 1] - min) / (max - min)) * 100;
+function calcularEMA(dados, periodo) {
+  const k = 2/(periodo + 1);
+  let ema = dados.slice(0, periodo).reduce((a, b) => a + b, 0)/periodo;
+  for (let i = periodo; i < dados.length; i++) {
+    ema = dados[i] * k + ema * (1 - k);
+  }
+  return ema;
 }
 
-function calcularWilliamsR(closes, low, high, periodo = 14) {
-  const max = Math.max(...high.slice(-periodo));
-  const min = Math.min(...low.slice(-periodo));
-  return ((max - closes[closes.length - 1]) / (max - min)) * -100;
+function calcularSMA(dados, periodo) {
+  return dados.slice(-periodo).reduce((a, b) => a + b, 0)/periodo;
 }
 
-// =============================================
-// LEITURA PRINCIPAL
-// =============================================
-async function leituraReal() {
-  if (leituraEmAndamento) return;
-  leituraEmAndamento = true;
-
+// ================= LÓGICA DE ENTRADA =================
+async function executarEntrada(sinal) {
+  if (emOperacao) return;
+  
+  emOperacao = true;
+  const horario = new Date().toLocaleTimeString();
+  
   try {
-    const response = await fetch(API_ENDPOINTS[0]);
-    const data = await response.json();
-
-    const closes = data.map(d => parseFloat(d[4]));
-    const low = data.map(d => parseFloat(d[3]));
-    const high = data.map(d => parseFloat(d[2]));
-    const volume = data.map(d => parseFloat(d[5]));
-
-    const rsi = calcularRSI(closes);
-    const macd = calcularMACD(closes);
-    const ema21 = calcularEMA(closes, 21).slice(-1)[0];
-    const ema50 = calcularEMA(closes, 50).slice(-1)[0];
-    const estocastico = calcularEstocastico(closes, low, high);
-    const williamsR = calcularWilliamsR(closes, low, high);
-
-    const precoAtual = closes[closes.length - 1];
-
-    let scoreCall = 0;
-    let scorePut = 0;
-
-    if (rsi < 30) scoreCall++;
-    if (rsi > 70) scorePut++;
-    if (macd.histograma > 0) scoreCall++;
-    if (macd.histograma < 0) scorePut++;
-    if (precoAtual > ema21 && ema21 > ema50) scoreCall++;
-    if (precoAtual < ema21 && ema21 < ema50) scorePut++;
-    if (estocastico < 20) scoreCall++;
-    if (estocastico > 80) scorePut++;
-    if (williamsR < -80) scoreCall++;
-    if (williamsR > -20) scorePut++;
-
-    let acao = "ESPERAR";
-    let cor = "white";
-    const forca = Math.abs(scoreCall - scorePut);
-
-    if (scoreCall >= 4 && scoreCall > scorePut) {
-      acao = "CALL";
-      cor = "lime";
-    } else if (scorePut >= 4 && scorePut > scoreCall) {
-      acao = "PUT";
-      cor = "red";
-    }
-
-    document.getElementById("comando").textContent = acao;
-    document.getElementById("comando").style.color = cor;
-    document.getElementById("score").textContent = `Call: ${scoreCall} | Put: ${scorePut} | Força: ${forca}`;
-    document.getElementById("hora").textContent = new Date().toLocaleTimeString();
-
-    const precoElement = Array.from(document.querySelectorAll("#criterios li"))
-      .find(li => li.textContent.startsWith("Preço:"));
-    if (precoElement) precoElement.textContent = `Preço: ${precoAtual.toFixed(2)}`;
-
-    if (acao !== "ESPERAR") {
-      ultimos.unshift(`${acao} (${new Date().toLocaleTimeString()})`);
-      if (ultimos.length > 10) ultimos.pop();
-      document.getElementById("ultimos").innerHTML = ultimos.map(u => `<li>${u}</li>`).join("");
-    }
-
-    ultimaAtualizacao = new Date().toLocaleTimeString();
-  } catch (erro) {
-    console.error("Erro na leitura:", erro);
+    console.log(`[${horario}] Executando ${sinal}...`);
+    
+    // Simulação de entrada (substitua pela API real da Stockity)
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    console.log(`[${horario}] Operação ${sinal} realizada com sucesso!`);
+    historicoSinais.unshift({
+      horario,
+      sinal,
+      resultado: "SUCESSO"
+    });
+    
+  } catch (error) {
+    console.error(`[${horario}] Erro na operação:`, error);
+    historicoSinais.unshift({
+      horario,
+      sinal,
+      resultado: "ERRO"
+    });
   } finally {
-    leituraEmAndamento = false;
+    emOperacao = false;
   }
 }
 
-// =============================================
-// TIMER SINCRONIZADO
-// =============================================
-function iniciarTimer() {
-  clearInterval(intervaloAtual);
-
-  const agora = Date.now();
-  const delayProximaVela = 60000 - (agora % 60000);
-  timer = Math.max(1, Math.floor(delayProximaVela / 1000));
-
-  const elementoTimer = document.getElementById("timer");
-  if (!elementoTimer) return;
-
-  elementoTimer.textContent = formatarTimer(timer);
-  elementoTimer.style.color = timer <= 5 ? 'red' : '';
-
-  intervaloAtual = setInterval(() => {
-    timer--;
-    if (!elementoTimer) return;
-    elementoTimer.textContent = formatarTimer(timer);
-    elementoTimer.style.color = timer <= 5 ? 'red' : '';
-
-    if (timer <= 0) {
-      clearInterval(intervaloAtual);
-      leituraReal().finally(iniciarTimer);
+// ================= NÚCLEO DE ANÁLISE =================
+async function analisarMercado() {
+  try {
+    const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${config.paridade}&interval=${config.intervalo}&limit=100`);
+    const candles = await response.json();
+    
+    if (!candles || candles.length < 50) {
+      throw new Error("Dados insuficientes");
     }
-  }, 1000);
+    
+    // Processamento dos dados
+    const closes = candles.map(c => parseFloat(c[4]));
+    const highs = candles.map(c => parseFloat(c[2]));
+    const lows = candles.map(c => parseFloat(c[3]));
+    const currentPrice = closes[closes.length-1];
+    
+    // Cálculo dos indicadores
+    const rsi = calcularRSI(closes);
+    const stoch = calcularStochastic(highs, lows, closes);
+    const ema21 = calcularEMA(closes, 21);
+    const ema50 = calcularEMA(closes, 50);
+    const diffEMAs = Math.abs(ema21 - ema50) / currentPrice * 100;
+    
+    // Geração do sinal
+    let sinal = "ESPERAR";
+    if (diffEMAs > config.filtroLateralidade) {
+      const pontosCALL = (rsi < config.limiarRSI.baixo ? 1.3 : 0) + 
+                        (stoch.k < config.limiarStoch.baixo ? 1.2 : 0);
+      
+      const pontosPUT = (rsi > config.limiarRSI.alto ? 1.3 : 0) + 
+                       (stoch.k > config.limiarStoch.alto ? 1.2 : 0);
+      
+      if (pontosCALL >= 2.5 && rsi < 60) sinal = "CALL";
+      if (pontosPUT >= 2.5 && rsi > 40) sinal = "PUT";
+    }
+    
+    // Log de análise
+    console.log(`\n[${new Date().toLocaleTimeString()}] Análise:`);
+    console.log(`- Preço: ${currentPrice.toFixed(2)}`);
+    console.log(`- RSI: ${rsi.toFixed(1)}`);
+    console.log(`- Stoch: K=${stoch.k.toFixed(1)}, D=${stoch.d.toFixed(1)}`);
+    console.log(`- EMAs: 21=${ema21.toFixed(2)}, 50=${ema50.toFixed(2)}`);
+    console.log(`- Dif EMAs: ${diffEMAs.toFixed(2)}%`);
+    console.log(`- Sinal: ${sinal}`);
+    
+    // Execução com delay
+    if (sinal !== "ESPERAR") {
+      setTimeout(() => executarEntrada(sinal), config.delayStockity);
+    }
+    
+  } catch (error) {
+    console.error("Erro na análise:", error);
+  }
 }
 
-// =============================================
-// INÍCIO AUTOMÁTICO
-// =============================================
-window.onload = () => {
-  leituraReal().finally(iniciarTimer);
-};
+// ================= INICIALIZAÇÃO =================
+function iniciarRobo() {
+  console.log("Iniciando robô para Cripto IDX...");
+  console.log(`Configurações: ${JSON.stringify(config, null, 2)}`);
+  
+  // Executa imediatamente e depois a cada minuto
+  analisarMercado();
+  setInterval(analisarMercado, 60000);
+  
+  // Monitoramento do histórico
+  setInterval(() => {
+    console.log("\nÚltimos sinais:");
+    console.table(historicoSinais.slice(0, 5));
+  }, 300000);
+}
+
+// Inicia o robô
+document.addEventListener('DOMContentLoaded', iniciarRobo);
