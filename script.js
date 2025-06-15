@@ -1,29 +1,6 @@
 // =============================================
-// CONFIGURAÇÕES GLOBAIS OTIMIZADAS
+// CONFIGURAÇÕES GLOBAIS
 // =============================================
-const config = {
-  symbol: "BTCIDX",
-  binanceSymbol: "BTCUSDT",
-  emaSettings: {
-    short: 8,     // EMA rápida - melhor resposta para o IDX
-    medium: 21,   // EMA média - padrão ouro
-    long: 55      // EMA longa - melhor para tendências no IDX
-  },
-  rsiSettings: {
-    overbought: 70,
-    oversold: 30,
-    period: 14
-  },
-  volumeSettings: {
-    period: 20,
-    threshold: 1.8 // 1.8x a média
-  },
-  minConfidence: 75,
-  trendConfirmation: 3, // Número de candles de confirmação
-  historySize: 15,
-  refreshInterval: 5000 // 5 segundos
-};
-
 let win = 0, loss = 0;
 let ultimos = [];
 let timer = 60;
@@ -31,26 +8,37 @@ let ultimaAtualizacao = "";
 let leituraEmAndamento = false;
 let intervaloAtual = null;
 let tentativasErro = 0;
-let ultimoSinalTimestamp = 0;
-let bloqueioSinal = false;
+
+const API_ENDPOINTS = [
+  "https://api.binance.com/api/v3",
+  "https://api1.binance.com/api/v3", 
+  "https://api2.binance.com/api/v3",
+  "https://api3.binance.com/api/v3"
+];
 
 // =============================================
-// FUNÇÕES DE INDICADORES OTIMIZADAS
+// FUNÇÕES BÁSICAS
 // =============================================
-function calcularEMA(dados, periodo) {
-  if (!Array.isArray(dados) || dados.length < periodo) return null;
-  
-  const k = 2 / (periodo + 1);
-  let ema = dados.slice(0, periodo).reduce((a, b) => a + b, 0) / periodo;
-  
-  for (let i = periodo; i < dados.length; i++) {
-    ema = dados[i] * k + ema * (1 - k);
+function atualizarRelogio() {
+  const agora = new Date();
+  const elementoHora = document.getElementById("hora");
+  if (elementoHora) {
+    elementoHora.textContent = agora.toLocaleTimeString("pt-BR", {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
   }
-  
-  return ema;
 }
 
-function calcularRSI(closes, periodo = config.rsiSettings.period) {
+function formatarTimer(segundos) {
+  return `0:${segundos.toString().padStart(2, '0')}`;
+}
+
+// =============================================
+// INDICADORES TÉCNICOS (OTIMIZADOS)
+// =============================================
+function calcularRSI(closes, periodo = 14) {
   if (!Array.isArray(closes) || closes.length < periodo + 1) return 50;
   
   let gains = 0, losses = 0;
@@ -65,205 +53,292 @@ function calcularRSI(closes, periodo = config.rsiSettings.period) {
 
   for (let i = periodo + 1; i < closes.length; i++) {
     const diff = closes[i] - closes[i - 1];
-    avgGain = (avgGain * (periodo - 1) + (diff > 0 ? diff : 0)) / periodo;
-    avgLoss = (avgLoss * (periodo - 1) + (diff < 0 ? Math.abs(diff) : 0)) / periodo;
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? Math.abs(diff) : 0;
+    avgGain = (avgGain * (periodo - 1) + gain) / periodo;
+    avgLoss = (avgLoss * (periodo - 1) + loss) / periodo;
   }
 
-  return avgLoss === 0 ? 100 : 100 - (100 / (1 + (avgGain / avgLoss)));
+  if (avgLoss <= 0.001) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
 }
 
-// =============================================
-// FUNÇÕES DE ANÁLISE DE TENDÊNCIA
-// =============================================
-function verificarTendencia(closes) {
-  const ema8 = calcularEMA(closes, config.emaSettings.short);
-  const ema21 = calcularEMA(closes, config.emaSettings.medium);
-  const ema55 = calcularEMA(closes, config.emaSettings.long);
-  
-  let confirmacaoAlta = 0;
-  let confirmacaoBaixa = 0;
-  const startIdx = closes.length - config.trendConfirmation;
-  
-  for (let i = startIdx; i < closes.length; i++) {
-    if (closes[i] > ema21 && ema8 > ema21 && ema21 > ema55) confirmacaoAlta++;
-    if (closes[i] < ema21 && ema8 < ema21 && ema21 < ema55) confirmacaoBaixa++;
-  }
-
-  if (confirmacaoAlta === config.trendConfirmation) return "ALTA_FORTE";
-  if (confirmacaoBaixa === config.trendConfirmation) return "BAIXA_FORTE";
-  
-  return "LATERAL";
-}
-
-// =============================================
-// FUNÇÕES DE INTERFACE
-// =============================================
-function atualizarRelogio() {
-  const agora = new Date();
-  ultimaAtualizacao = agora.toLocaleTimeString("pt-BR", {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  });
-  document.getElementById("hora").textContent = ultimaAtualizacao;
-}
-
-function formatarTimer(segundos) {
-  const mins = Math.floor(segundos / 60);
-  const secs = segundos % 60;
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
-function tocarSom(tipo) {
-  const som = document.getElementById(`som-${tipo.toLowerCase()}`);
-  if (som) {
-    som.currentTime = 0;
-    som.play().catch(e => console.log("Erro ao tocar som:", e));
-  }
-}
-
-function registrar(resultado) {
-  if (resultado === "WIN") win++;
-  if (resultado === "LOSS") loss++;
-  document.getElementById("historico").textContent = `${win} WIN / ${loss} LOSS`;
-}
-
-function atualizarInterface(sinal) {
-  document.getElementById("comando").textContent = sinal.comando;
-  document.getElementById("score").textContent = `Confiança: ${Math.round(sinal.confidence)}%`;
-  document.getElementById("hora").textContent = ultimaAtualizacao;
-
-  document.getElementById("criterios").innerHTML = `
-    <li><strong>Tendência: ${sinal.tendencia.replace('_FORTE', '')}</strong></li>
-    <li>Preço: $${sinal.price.toFixed(2)}</li>
-    <li>RSI: ${sinal.rsi.toFixed(2)} ${sinal.rsi < config.rsiSettings.oversold ? '🔻' : sinal.rsi > config.rsiSettings.overbought ? '🔺' : ''}</li>
-    <li>Volume: ${sinal.volumeRatio.toFixed(2)}x média</li>
-    <li>EMA8: ${sinal.ema8.toFixed(2)}</li>
-    <li>EMA21: ${sinal.ema21.toFixed(2)}</li>
-    <li>EMA55: ${sinal.ema55.toFixed(2)}</li>
-    ${sinal.motivo ? `<li>Motivo: ${sinal.motivo}</li>` : ''}
-  `;
-
-  if (sinal.comando !== "ESPERAR") {
-    tocarSom(sinal.comando);
-    ultimos.unshift(`${ultimaAtualizacao} - ${sinal.comando} (${Math.round(sinal.confidence)}%)`);
-    if (ultimos.length > config.historySize) ultimos.pop();
-    document.getElementById("ultimos").innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
-  }
-}
-
-// =============================================
-// LÓGICA PRINCIPAL OTIMIZADA
-// =============================================
-async function gerarSinal() {
+function calcularStochastic(highs, lows, closes, periodo = 14) {
   try {
-    const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${config.binanceSymbol}&interval=1m&limit=100`);
-    const dados = await response.json();
+    if (!Array.isArray(closes) || closes.length < periodo) return { k: 50, d: 50 };
     
-    const closes = dados.map(c => parseFloat(c[4]));
-    const volumes = dados.map(c => parseFloat(c[5]));
-    const currentPrice = closes[closes.length - 1];
-    const currentVolume = volumes[volumes.length - 1];
-
-    // Calcular indicadores
-    const rsi = calcularRSI(closes);
-    const tendencia = verificarTendencia(closes);
-    const ema8 = calcularEMA(closes, config.emaSettings.short);
-    const ema21 = calcularEMA(closes, config.emaSettings.medium);
-    const ema55 = calcularEMA(closes, config.emaSettings.long);
-    const volumeMedia = calcularEMA(volumes, config.volumeSettings.period) || 1;
-    const volumeRatio = currentVolume / volumeMedia;
-
-    // Estrutura base do sinal
-    const sinal = {
-      price: currentPrice,
-      rsi,
-      ema8,
-      ema21,
-      ema55,
-      volumeRatio,
-      tendencia,
-      comando: "ESPERAR",
-      confidence: 0,
-      motivo: ""
-    };
-
-    // Filtro de volume
-    if (volumeRatio < config.volumeSettings.threshold) {
-      sinal.motivo = "Volume abaixo do limiar";
-      return sinal;
+    const kValues = [];
+    for (let i = periodo-1; i < closes.length; i++) {
+      const highestHigh = Math.max(...highs.slice(i-periodo+1, i+1));
+      const lowestLow = Math.min(...lows.slice(i-periodo+1, i+1));
+      const currentClose = closes[i];
+      kValues.push(((currentClose - lowestLow) / (highestHigh - lowestLow)) * 100);
     }
-
-    // Sinal de CALL (compra)
-    if (tendencia === "ALTA_FORTE" && rsi < config.rsiSettings.oversold) {
-      sinal.comando = "CALL";
-      sinal.confidence = 75 + (config.rsiSettings.oversold - rsi);
-    }
-    // Sinal de PUT (venda)
-    else if (tendencia === "BAIXA_FORTE" && rsi > config.rsiSettings.overbought) {
-      sinal.comando = "PUT";
-      sinal.confidence = 75 + (rsi - config.rsiSettings.overbought);
-    } else {
-      sinal.motivo = "Aguardando confirmação";
-    }
-
-    return sinal;
-
-  } catch (e) {
-    console.error("Erro na geração de sinal:", e);
+    
+    const dValues = kValues.length >= 3 ? calcularSMA(kValues, 3) : 50;
     return {
-      comando: "ERRO",
-      confidence: 0,
-      motivo: "Falha na conexão"
+      k: kValues[kValues.length-1] || 50,
+      d: dValues || 50
     };
+  } catch (e) {
+    console.error("Erro no cálculo Stochastic:", e);
+    return { k: 50, d: 50 };
   }
 }
 
-async function leituraReal() {
-  if (leituraEmAndamento || bloqueioSinal) return;
+function calcularWilliams(highs, lows, closes, periodo = 14) {
+  try {
+    if (!Array.isArray(closes) || closes.length < periodo) return 0;
+    
+    const highestHigh = Math.max(...highs.slice(-periodo));
+    const lowestLow = Math.min(...lows.slice(-periodo));
+    const currentClose = closes[closes.length-1];
+    
+    return ((highestHigh - currentClose) / (highestHigh - lowestLow)) * -100;
+  } catch (e) {
+    console.error("Erro no cálculo Williams:", e);
+    return 0;
+  }
+}
+
+function calcularSerieEMA(dados, periodo) {
+  if (!Array.isArray(dados) || dados.length < periodo) return [];
   
+  const k = 2 / (periodo + 1);
+  const emaArray = [];
+  let soma = 0;
+  
+  for (let i = 0; i < periodo; i++) {
+    soma += dados[i];
+  }
+  emaArray[periodo - 1] = soma / periodo;
+
+  for (let i = periodo; i < dados.length; i++) {
+    emaArray[i] = dados[i] * k + emaArray[i - 1] * (1 - k);
+  }
+  
+  return emaArray;
+}
+
+function calcularSMA(dados, periodo) {
+  if (!Array.isArray(dados) || dados.length < periodo) return null;
+  return dados.slice(-periodo).reduce((a, b) => a + b, 0) / periodo;
+}
+
+function calcularMACD(closes, rapida = 12, lenta = 26, sinal = 9) {
+  try {
+    if (!Array.isArray(closes) || closes.length < lenta + sinal) {
+      return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
+    }
+
+    const emaRapida = calcularSerieEMA(closes, rapida);
+    const emaLenta = calcularSerieEMA(closes, lenta);
+    
+    if (!emaRapida.length || !emaLenta.length) {
+      return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
+    }
+
+    const macdLinha = [];
+    const inicio = Math.max(rapida, lenta);
+
+    for (let i = inicio; i < closes.length; i++) {
+      macdLinha[i] = emaRapida[i] - emaLenta[i];
+    }
+
+    const sinalLinha = calcularSerieEMA(macdLinha.slice(inicio), sinal);
+    
+    const ultimoMACD = macdLinha[macdLinha.length - 1] || 0;
+    const ultimoSinal = sinalLinha[sinalLinha.length - 1] || 0;
+    
+    return {
+      histograma: ultimoMACD - ultimoSinal,
+      macdLinha: ultimoMACD,
+      sinalLinha: ultimoSinal
+    };
+  } catch (e) {
+    console.error("Erro no cálculo MACD:", e);
+    return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
+  }
+}
+
+// =============================================
+// SISTEMA DE SCORE DE CONFIÂNCIA
+// =============================================
+function calcularScoreConfianca(indicadores) {
+  let score = 50;
+
+  if (indicadores.rsi < 30 || indicadores.rsi > 70) score += 15;
+  else if (indicadores.rsi < 40 || indicadores.rsi > 60) score += 10;
+
+  if (Math.abs(indicadores.macd.histograma) > 0.3) score += 15;
+  else if (Math.abs(indicadores.macd.histograma) > 0.1) score += 10;
+
+  if (indicadores.close > indicadores.ema21 && indicadores.ema21 > indicadores.ema50) score += 15;
+  else if (indicadores.close < indicadores.ema21 && indicadores.ema21 < indicadores.ema50) score += 15;
+
+  if (indicadores.volume > indicadores.volumeMedia * 1.3) score += 10;
+
+  if (indicadores.stoch.k < 20 && indicadores.stoch.d < 20) score += 10;
+  else if (indicadores.stoch.k > 80 && indicadores.stoch.d > 80) score += 10;
+
+  if (indicadores.williams < -80) score += 10;
+  else if (indicadores.williams > -20) score += 10;
+
+  return Math.min(100, Math.max(0, score));
+}
+
+// =============================================
+// LÓGICA PRINCIPAL (COM MELHORIAS)
+// =============================================
+async function leituraReal() {
+  if (leituraEmAndamento) return;
   leituraEmAndamento = true;
-  bloqueioSinal = true;
 
   try {
-    atualizarRelogio();
-    const sinal = await gerarSinal();
-    atualizarInterface(sinal);
-
-    if (sinal.comando !== "ESPERAR" && sinal.comando !== "ERRO") {
-      ultimoSinalTimestamp = Date.now();
+    // Tenta endpoints alternativos em caso de falha
+    let dados;
+    for (const endpoint of API_ENDPOINTS) {
+      try {
+        const response = await fetch(`${endpoint}/klines?symbol=BTCUSDT&interval=1m&limit=150`);
+        if (!response.ok) continue;
+        dados = await response.json();
+        if (Array.isArray(dados) && dados.length > 0) break;
+      } catch (e) {
+        console.error(`Erro no endpoint ${endpoint}:`, e);
+      }
     }
+
+    if (!Array.isArray(dados) || dados.length === 0) {
+      throw new Error("Todos os endpoints falharam");
+    }
+
+    const dadosValidos = dados.filter(v => Array.isArray(v) && v.length >= 6);
+    if (dadosValidos.length < 50) throw new Error("Dados insuficientes");
+
+    const velaAtual = dadosValidos[dadosValidos.length - 1];
+    const close = parseFloat(velaAtual[4]);
+    const high = parseFloat(velaAtual[2]);
+    const low = parseFloat(velaAtual[3]);
+    const volume = parseFloat(velaAtual[5]);
+
+    const closes = dadosValidos.map(v => parseFloat(v[4]));
+    const highs = dadosValidos.map(v => parseFloat(v[2]));
+    const lows = dadosValidos.map(v => parseFloat(v[3]));
+    const volumes = dadosValidos.map(v => parseFloat(v[5]));
+
+    // Calcula indicadores
+    const rsi = calcularRSI(closes);
+    const macd = calcularMACD(closes);
+    const sma9 = calcularSMA(closes, 9);
+    const ema21Array = calcularSerieEMA(closes, 21);
+    const ema21 = ema21Array[ema21Array.length - 1] || 0;
+    const ema50Array = calcularSerieEMA(closes, 50);
+    const ema50 = ema50Array[ema50Array.length - 1] || 0;
+    const volumeMedia = calcularSMA(volumes, 20) || 0;
+    const stoch = calcularStochastic(highs, lows, closes);
+    const williams = calcularWilliams(highs, lows, closes);
+
+    // Calcula score
+    const scoreConfianca = calcularScoreConfianca({
+      rsi, macd, close, ema21, ema50, volume, volumeMedia, stoch, williams
+    });
+
+    // Sistema de pontos
+    let pontosCALL = 0, pontosPUT = 0;
+    
+    if (rsi < 40) pontosCALL += 1.2;
+    if (rsi > 60) pontosPUT += 1.2;
+    
+    if (macd.histograma > 0.1) pontosCALL += 1.5;
+    if (macd.histograma < -0.1) pontosPUT += 1.5;
+    
+    if (close > ema21) pontosCALL += 0.8;
+    if (close < ema21) pontosPUT += 0.8;
+    
+    if (volume > volumeMedia * 1.2) {
+      if (pontosCALL > pontosPUT) pontosCALL += 1;
+      else pontosPUT += 1;
+    }
+    
+    if (stoch.k < 20 && stoch.d < 20) pontosCALL += 1;
+    if (stoch.k > 80 && stoch.d > 80) pontosPUT += 1;
+    
+    if (williams < -80) pontosCALL += 0.8;
+    if (williams > -20) pontosPUT += 0.8;
+
+    // Decisão com filtro de tendência
+    const tendencia = close > ema50 && ema21 > ema50 ? "ALTA" :
+                     close < ema50 && ema21 < ema50 ? "BAIXA" : "LATERAL";
+
+    let comando = "ESPERAR";
+    if (pontosCALL >= 2.5 && scoreConfianca >= 50) {
+      comando = tendencia === "BAIXA" ? "ESPERAR" : "CALL";
+    } else if (pontosPUT >= 2.5 && scoreConfianca >= 50) {
+      comando = tendencia === "ALTA" ? "ESPERAR" : "PUT";
+    }
+
+    // Atualiza interface
+    ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR");
+    document.getElementById("comando").textContent = comando;
+    document.getElementById("score").textContent = `Confiança: ${scoreConfianca}%`;
+    document.getElementById("hora").textContent = ultimaAtualizacao;
+
+    document.getElementById("criterios").innerHTML = `
+      <li>Tendência: ${tendencia}</li>
+      <li>RSI: ${rsi.toFixed(2)} ${rsi < 40 ? '🔻' : rsi > 60 ? '🔺' : ''}</li>
+      <li>MACD: ${macd.histograma.toFixed(4)} ${macd.histograma > 0 ? '🟢' : '🔴'}</li>
+      <li>Stochastic: K ${stoch.k.toFixed(2)} / D ${stoch.d.toFixed(2)}</li>
+      <li>Williams: ${williams.toFixed(2)}</li>
+      <li>Preço: $${close.toFixed(2)}</li>
+      <li>Médias: SMA9 ${sma9?.toFixed(2) || 'N/A'} | EMA21 ${ema21.toFixed(2)} | EMA50 ${ema50.toFixed(2)}</li>
+      <li>Volume: ${volume.toFixed(2)} vs Média ${volumeMedia.toFixed(2)}</li>
+    `;
+
+    // Histórico
+    ultimos.unshift(`${ultimaAtualizacao} - ${comando} (${scoreConfianca}%)`);
+    if (ultimos.length > 5) ultimos.pop();
+    document.getElementById("ultimos").innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
 
   } catch (e) {
     console.error("Erro na leitura:", e);
     document.getElementById("comando").textContent = "ERRO";
     document.getElementById("score").textContent = "Confiança: 0%";
+    
     tentativasErro++;
-    if (tentativasErro > 3) setTimeout(() => leituraReal(), 30000);
+    if (tentativasErro > 3) {
+      console.error("Muitos erros consecutivos, reiniciando...");
+      setTimeout(() => location.reload(), 10000);
+    } else {
+      setTimeout(() => leituraReal(), 10000);
+    }
   } finally {
     leituraEmAndamento = false;
-    setTimeout(() => { bloqueioSinal = false; }, 5000);
   }
 }
 
 // =============================================
-// CONTROLE DO TIMER
+// TIMER E INICIALIZAÇÃO (MELHORADOS)
 // =============================================
 function iniciarTimer() {
   clearInterval(intervaloAtual);
-  
+
   const agora = Date.now();
   const delayProximaVela = 60000 - (agora % 60000);
   timer = Math.max(1, Math.floor(delayProximaVela / 1000));
 
   const elementoTimer = document.getElementById("timer");
-  elementoTimer.textContent = formatarTimer(timer);
-  elementoTimer.style.color = timer <= 5 ? 'red' : '';
+  if (elementoTimer) {
+    elementoTimer.textContent = formatarTimer(timer);
+    elementoTimer.style.color = timer <= 5 ? 'red' : '';
+  }
 
   intervaloAtual = setInterval(() => {
     timer--;
-    elementoTimer.textContent = formatarTimer(timer);
-    elementoTimer.style.color = timer <= 5 ? 'red' : '';
+    if (elementoTimer) {
+      elementoTimer.textContent = formatarTimer(timer);
+      elementoTimer.style.color = timer <= 5 ? 'red' : '';
+    }
     
     if (timer <= 0) {
       clearInterval(intervaloAtual);
@@ -272,31 +347,25 @@ function iniciarTimer() {
   }, 1000);
 }
 
-// =============================================
-// INICIALIZAÇÃO
-// =============================================
 function iniciarAplicativo() {
-  // Configurar atualização do relógio
   setInterval(atualizarRelogio, 1000);
-  
-  // Iniciar ciclo de leitura
   iniciarTimer();
   leituraReal();
-  
-  // Atualizar preço periodicamente
+
   setInterval(async () => {
     try {
-      const response = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${config.binanceSymbol}`);
-      const data = await response.json();
-      const priceElements = document.querySelectorAll("#criterios li");
-      if (priceElements.length > 1) {
-        priceElements[1].innerHTML = `Preço: $${parseFloat(data.price).toFixed(2)}`;
+      const response = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT");
+      if (!response.ok) return;
+      const dados = await response.json();
+      const precoElement = document.querySelector("#criterios li:nth-child(6)");
+      if (precoElement && dados.lastPrice) {
+        precoElement.textContent = `Preço: $${parseFloat(dados.lastPrice).toFixed(2)}`;
       }
     } catch (e) {
       console.error("Erro ao atualizar preço:", e);
     }
-  }, config.refreshInterval);
+  }, 5000);
 }
 
-// Iniciar quando o DOM estiver pronto
+// Inicialização segura
 document.addEventListener('DOMContentLoaded', iniciarAplicativo);
