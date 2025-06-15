@@ -1,14 +1,27 @@
 // =============================================
-// CONFIGURAÇÕES GLOBAIS REVISADAS
+// CONFIGURAÇÕES GLOBAIS OTIMIZADAS
 // =============================================
 const config = {
   symbol: "BTCIDX",
   binanceSymbol: "BTCUSDT",
-  minConfidence: 65,
+  emaSettings: {
+    short: 8,     // EMA rápida - melhor resposta para o IDX
+    medium: 21,   // EMA média - padrão ouro
+    long: 55      // EMA longa - melhor para tendências no IDX
+  },
+  rsiSettings: {
+    overbought: 70,
+    oversold: 30,
+    period: 14
+  },
+  volumeSettings: {
+    period: 20,
+    threshold: 1.8 // 1.8x a média
+  },
+  minConfidence: 75,
+  trendConfirmation: 3, // Número de candles de confirmação
   historySize: 15,
-  rsiOverbought: 70,
-  rsiOversold: 30,
-  volumeThreshold: 1.5 // Multiplicador de volume mínimo
+  refreshInterval: 5000 // 5 segundos
 };
 
 let win = 0, loss = 0;
@@ -22,7 +35,7 @@ let ultimoSinalTimestamp = 0;
 let bloqueioSinal = false;
 
 // =============================================
-// FUNÇÕES DE INDICADORES REVISADAS
+// FUNÇÕES DE INDICADORES OTIMIZADAS
 // =============================================
 function calcularEMA(dados, periodo) {
   if (!Array.isArray(dados) || dados.length < periodo) return null;
@@ -37,7 +50,7 @@ function calcularEMA(dados, periodo) {
   return ema;
 }
 
-function calcularRSI(closes, periodo = 14) {
+function calcularRSI(closes, periodo = config.rsiSettings.period) {
   if (!Array.isArray(closes) || closes.length < periodo + 1) return 50;
   
   let gains = 0, losses = 0;
@@ -60,99 +73,41 @@ function calcularRSI(closes, periodo = 14) {
 }
 
 // =============================================
-// LÓGICA PRINCIPAL REVISADA
+// FUNÇÕES DE ANÁLISE DE TENDÊNCIA
 // =============================================
-async function leituraReal() {
-  if (leituraEmAndamento || bloqueioSinal) return;
+function verificarTendencia(closes) {
+  const ema8 = calcularEMA(closes, config.emaSettings.short);
+  const ema21 = calcularEMA(closes, config.emaSettings.medium);
+  const ema55 = calcularEMA(closes, config.emaSettings.long);
   
-  leituraEmAndamento = true;
-  bloqueioSinal = true;
-
-  try {
-    // 1. OBTER DADOS DA BINANCE
-    const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${config.binanceSymbol}&interval=1m&limit=100`);
-    const dados = await response.json();
-    
-    const closes = dados.map(c => parseFloat(c[4]));
-    const highs = dados.map(c => parseFloat(c[2]));
-    const lows = dados.map(c => parseFloat(c[3]));
-    const volumes = dados.map(c => parseFloat(c[5]));
-
-    const currentPrice = closes[closes.length - 1];
-    const currentVolume = volumes[volumes.length - 1];
-
-    // 2. CALCULAR INDICADORES
-    const rsi = calcularRSI(closes);
-    const ema9 = calcularEMA(closes, 9);
-    const ema21 = calcularEMA(closes, 21);
-    const ema50 = calcularEMA(closes, 50);
-    const volumeMedia = calcularEMA(volumes, 20) || 1;
-
-    // 3. DETERMINAR TENDÊNCIA REAL (CORRIGIDA)
-    let tendencia;
-    if (currentPrice > ema50 && ema21 > ema50) {
-      tendencia = "ALTA";
-    } else if (currentPrice < ema50 && ema21 < ema50) {
-      tendencia = "BAIXA";
-    } else {
-      tendencia = "LATERAL";
-    }
-
-    // 4. SISTEMA DE DECISÃO SIMPLIFICADO E EFETIVO
-    let comando = "ESPERAR";
-    let confidence = 0;
-
-    // Condições para CALL
-    if (tendencia === "ALTA" && rsi < config.rsiOversold && currentVolume > volumeMedia * config.volumeThreshold) {
-      comando = "CALL";
-      confidence = 70 + (config.rsiOversold - rsi);
-    } 
-    // Condições para PUT
-    else if (tendencia === "BAIXA" && rsi > config.rsiOverbought && currentVolume > volumeMedia * config.volumeThreshold) {
-      comando = "PUT";
-      confidence = 70 + (rsi - config.rsiOverbought);
-    }
-
-    // 5. ATUALIZAR INTERFACE (COM TENDÊNCIA CLARA)
-    document.getElementById("comando").textContent = comando;
-    document.getElementById("score").textContent = `Confiança: ${Math.min(100, confidence)}%`;
-    ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR");
-    document.getElementById("hora").textContent = ultimaAtualizacao;
-
-    document.getElementById("criterios").innerHTML = `
-      <li><strong>Tendência: ${tendencia}</strong></li>
-      <li>Preço: $${currentPrice.toFixed(2)}</li>
-      <li>RSI: ${rsi.toFixed(2)} ${rsi < 30 ? '🔻' : rsi > 70 ? '🔺' : ''}</li>
-      <li>Volume: ${(currentVolume/volumeMedia).toFixed(2)}x média</li>
-      <li>EMA9: ${ema9?.toFixed(2) || 'N/A'}</li>
-      <li>EMA21: ${ema21?.toFixed(2) || 'N/A'}</li>
-      <li>EMA50: ${ema50?.toFixed(2) || 'N/A'}</li>
-    `;
-
-    // 6. REGISTRAR SINAL SE HOUVER
-    if (comando !== "ESPERAR") {
-      tocarSom(comando);
-      ultimos.unshift(`${ultimaAtualizacao} - ${comando} (${Math.round(confidence)}%)`);
-      if (ultimos.length > config.historySize) ultimos.pop();
-      document.getElementById("ultimos").innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
-      ultimoSinalTimestamp = Date.now();
-    }
-
-  } catch (e) {
-    console.error("Erro na leitura:", e);
-    document.getElementById("comando").textContent = "ERRO";
-    document.getElementById("score").textContent = "Confiança: 0%";
-    tentativasErro++;
-    if (tentativasErro > 3) setTimeout(() => leituraReal(), 30000);
-  } finally {
-    leituraEmAndamento = false;
-    setTimeout(() => { bloqueioSinal = false; }, 5000);
+  let confirmacaoAlta = 0;
+  let confirmacaoBaixa = 0;
+  const startIdx = closes.length - config.trendConfirmation;
+  
+  for (let i = startIdx; i < closes.length; i++) {
+    if (closes[i] > ema21 && ema8 > ema21 && ema21 > ema55) confirmacaoAlta++;
+    if (closes[i] < ema21 && ema8 < ema21 && ema21 < ema55) confirmacaoBaixa++;
   }
+
+  if (confirmacaoAlta === config.trendConfirmation) return "ALTA_FORTE";
+  if (confirmacaoBaixa === config.trendConfirmation) return "BAIXA_FORTE";
+  
+  return "LATERAL";
 }
 
 // =============================================
-// FUNÇÕES AUXILIARES (MANTIDAS)
+// FUNÇÕES DE INTERFACE
 // =============================================
+function atualizarRelogio() {
+  const agora = new Date();
+  ultimaAtualizacao = agora.toLocaleTimeString("pt-BR", {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+  document.getElementById("hora").textContent = ultimaAtualizacao;
+}
+
 function formatarTimer(segundos) {
   const mins = Math.floor(segundos / 60);
   const secs = segundos % 60;
@@ -173,6 +128,127 @@ function registrar(resultado) {
   document.getElementById("historico").textContent = `${win} WIN / ${loss} LOSS`;
 }
 
+function atualizarInterface(sinal) {
+  document.getElementById("comando").textContent = sinal.comando;
+  document.getElementById("score").textContent = `Confiança: ${Math.round(sinal.confidence)}%`;
+  document.getElementById("hora").textContent = ultimaAtualizacao;
+
+  document.getElementById("criterios").innerHTML = `
+    <li><strong>Tendência: ${sinal.tendencia.replace('_FORTE', '')}</strong></li>
+    <li>Preço: $${sinal.price.toFixed(2)}</li>
+    <li>RSI: ${sinal.rsi.toFixed(2)} ${sinal.rsi < config.rsiSettings.oversold ? '🔻' : sinal.rsi > config.rsiSettings.overbought ? '🔺' : ''}</li>
+    <li>Volume: ${sinal.volumeRatio.toFixed(2)}x média</li>
+    <li>EMA8: ${sinal.ema8.toFixed(2)}</li>
+    <li>EMA21: ${sinal.ema21.toFixed(2)}</li>
+    <li>EMA55: ${sinal.ema55.toFixed(2)}</li>
+    ${sinal.motivo ? `<li>Motivo: ${sinal.motivo}</li>` : ''}
+  `;
+
+  if (sinal.comando !== "ESPERAR") {
+    tocarSom(sinal.comando);
+    ultimos.unshift(`${ultimaAtualizacao} - ${sinal.comando} (${Math.round(sinal.confidence)}%)`);
+    if (ultimos.length > config.historySize) ultimos.pop();
+    document.getElementById("ultimos").innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
+  }
+}
+
+// =============================================
+// LÓGICA PRINCIPAL OTIMIZADA
+// =============================================
+async function gerarSinal() {
+  try {
+    const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${config.binanceSymbol}&interval=1m&limit=100`);
+    const dados = await response.json();
+    
+    const closes = dados.map(c => parseFloat(c[4]));
+    const volumes = dados.map(c => parseFloat(c[5]));
+    const currentPrice = closes[closes.length - 1];
+    const currentVolume = volumes[volumes.length - 1];
+
+    // Calcular indicadores
+    const rsi = calcularRSI(closes);
+    const tendencia = verificarTendencia(closes);
+    const ema8 = calcularEMA(closes, config.emaSettings.short);
+    const ema21 = calcularEMA(closes, config.emaSettings.medium);
+    const ema55 = calcularEMA(closes, config.emaSettings.long);
+    const volumeMedia = calcularEMA(volumes, config.volumeSettings.period) || 1;
+    const volumeRatio = currentVolume / volumeMedia;
+
+    // Estrutura base do sinal
+    const sinal = {
+      price: currentPrice,
+      rsi,
+      ema8,
+      ema21,
+      ema55,
+      volumeRatio,
+      tendencia,
+      comando: "ESPERAR",
+      confidence: 0,
+      motivo: ""
+    };
+
+    // Filtro de volume
+    if (volumeRatio < config.volumeSettings.threshold) {
+      sinal.motivo = "Volume abaixo do limiar";
+      return sinal;
+    }
+
+    // Sinal de CALL (compra)
+    if (tendencia === "ALTA_FORTE" && rsi < config.rsiSettings.oversold) {
+      sinal.comando = "CALL";
+      sinal.confidence = 75 + (config.rsiSettings.oversold - rsi);
+    }
+    // Sinal de PUT (venda)
+    else if (tendencia === "BAIXA_FORTE" && rsi > config.rsiSettings.overbought) {
+      sinal.comando = "PUT";
+      sinal.confidence = 75 + (rsi - config.rsiSettings.overbought);
+    } else {
+      sinal.motivo = "Aguardando confirmação";
+    }
+
+    return sinal;
+
+  } catch (e) {
+    console.error("Erro na geração de sinal:", e);
+    return {
+      comando: "ERRO",
+      confidence: 0,
+      motivo: "Falha na conexão"
+    };
+  }
+}
+
+async function leituraReal() {
+  if (leituraEmAndamento || bloqueioSinal) return;
+  
+  leituraEmAndamento = true;
+  bloqueioSinal = true;
+
+  try {
+    atualizarRelogio();
+    const sinal = await gerarSinal();
+    atualizarInterface(sinal);
+
+    if (sinal.comando !== "ESPERAR" && sinal.comando !== "ERRO") {
+      ultimoSinalTimestamp = Date.now();
+    }
+
+  } catch (e) {
+    console.error("Erro na leitura:", e);
+    document.getElementById("comando").textContent = "ERRO";
+    document.getElementById("score").textContent = "Confiança: 0%";
+    tentativasErro++;
+    if (tentativasErro > 3) setTimeout(() => leituraReal(), 30000);
+  } finally {
+    leituraEmAndamento = false;
+    setTimeout(() => { bloqueioSinal = false; }, 5000);
+  }
+}
+
+// =============================================
+// CONTROLE DO TIMER
+// =============================================
 function iniciarTimer() {
   clearInterval(intervaloAtual);
   
@@ -201,9 +277,7 @@ function iniciarTimer() {
 // =============================================
 function iniciarAplicativo() {
   // Configurar atualização do relógio
-  setInterval(() => {
-    document.getElementById("hora").textContent = new Date().toLocaleTimeString("pt-BR");
-  }, 1000);
+  setInterval(atualizarRelogio, 1000);
   
   // Iniciar ciclo de leitura
   iniciarTimer();
@@ -221,7 +295,7 @@ function iniciarAplicativo() {
     } catch (e) {
       console.error("Erro ao atualizar preço:", e);
     }
-  }, 5000);
+  }, config.refreshInterval);
 }
 
 // Iniciar quando o DOM estiver pronto
