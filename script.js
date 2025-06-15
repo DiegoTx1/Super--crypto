@@ -64,7 +64,7 @@ function atualizarRelogio() {
 // =============================================
 const calcularMedia = {
   simples: (dados, periodo) => {
-    if (!Array.isArray(dados) return null;
+    if (!Array.isArray(dados)) return null;
     const slice = dados.slice(-periodo);
     return slice.reduce((a, b) => a + b, 0) / slice.length;
   },
@@ -233,7 +233,7 @@ function determinarSinal(score, tendencia) {
     return tendencia.includes("ALTA") ? "CALL" : "PUT";
   }
   if (score >= 55) {
-    if (tendencia === "NEUTRA") return "CALL"; // Tendência neutra favorece CALL
+    if (tendencia === "NEUTRA") return "CALL";
     return tendencia.includes("ALTA") ? "CALL" : "PUT";
   }
   return "ESPERAR";
@@ -278,20 +278,23 @@ async function analisarMercado() {
     const volumes = dados.map(v => parseFloat(v[5]));
 
     // Calcula indicadores
+    const ema21Array = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_CURTA);
+    const ema50Array = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_LONGA);
+    
     const indicadores = {
       rsi: calcularRSI(closes),
       macd: calcularMACD(closes),
       sma9: calcularMedia.simples(closes, 9),
-      ema21: calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_CURTA).slice(-1)[0],
-      ema50: calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_LONGA).slice(-1)[0],
+      ema21: ema21Array[ema21Array.length - 1] || 0,
+      ema50: ema50Array[ema50Array.length - 1] || 0,
       volume,
       volumeMedia: calcularMedia.simples(volumes, CONFIG.PERIODOS.SMA_VOLUME),
       stoch: calcularStochastic(highs, lows, closes),
       williams: calcularWilliams(highs, lows, closes),
       close,
       tendencia: avaliarTendencia(closes, 
-        calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_CURTA).slice(-1)[0],
-        calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_LONGA).slice(-1)[0])
+        ema21Array[ema21Array.length - 1] || 0,
+        ema50Array[ema50Array.length - 1] || 0)
     };
 
     const score = calcularScore(indicadores);
