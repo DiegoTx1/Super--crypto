@@ -8,7 +8,9 @@ const state = {
   leituraEmAndamento: false,
   intervaloAtual: null,
   tentativasErro: 0,
-  ultimoSinal: null
+  ultimoSinal: null,
+  ultimoScore: 0,
+  contadorLaterais: 0
 };
 
 const CONFIG = {
@@ -27,17 +29,31 @@ const CONFIG = {
     SMA_VOLUME: 20,
     MACD_RAPIDA: 12,
     MACD_LENTA: 26,
-    MACD_SINAL: 9
+    MACD_SINAL: 9,
+    VELAS_CONFIRMACAO: 3,
+    ANALISE_LATERAL: 20
   },
   LIMIARES: {
-    SCORE_ALTO: 65,
-    SCORE_MEDIO: 55,
+    SCORE_ALTO: 68,
+    SCORE_MEDIO: 58,
     RSI_OVERBOUGHT: 70,
     RSI_OVERSOLD: 30,
     STOCH_OVERBOUGHT: 80,
     STOCH_OVERSOLD: 20,
     WILLIAMS_OVERBOUGHT: -20,
-    WILLIAMS_OVERSOLD: -80
+    WILLIAMS_OVERSOLD: -80,
+    VOLUME_ALTO: 1.5,
+    VARIACAO_LATERAL: 1.2
+  },
+  PESOS: {
+    RSI: 1.6,
+    MACD: 2.2,
+    TENDENCIA: 1.3,
+    VOLUME: 1.1,
+    STOCH: 1.3,
+    WILLIAMS: 1.1,
+    CONFIRMACAO: 0.9,
+    LATERALIDADE: 1.5
   }
 };
 
@@ -57,6 +73,60 @@ function atualizarRelogio() {
       second: '2-digit'
     });
   }
+}
+
+function atualizarInterface(sinal, score) {
+  const comandoElement = document.getElementById("comando");
+  comandoElement.textContent = sinal;
+  comandoElement.className = sinal.toLowerCase();
+  
+  document.getElementById("score").textContent = `Confiança: ${score}%`;
+  document.getElementById("hora").textContent = state.ultimaAtualizacao;
+}
+
+// =============================================
+// DETECÇÃO DE TENDÊNCIA (APRIMORADA)
+// =============================================
+function detectarMercadoLateral(closes) {
+  if (closes.length < CONFIG.PERIODOS.ANALISE_LATERAL) return false;
+  
+  const ultimosPrecos = closes.slice(-CONFIG.PERIODOS.ANALISE_LATERAL);
+  const maximo = Math.max(...ultimosPrecos);
+  const minimo = Math.min(...ultimosPrecos);
+  const variacao = ((maximo - minimo) / minimo) * 100;
+  
+  return variacao < CONFIG.LIMIARES.VARIACAO_LATERAL;
+}
+
+function avaliarTendencia(closes, emaCurta, emaLonga) {
+  if (closes.length < CONFIG.PERIODOS.VELAS_CONFIRMACAO) return "NEUTRA";
+  
+  // Detecção de mercado lateral
+  if (detectarMercadoLateral(closes)) {
+    state.contadorLaterais++;
+    return "LATERAL";
+  }
+  
+  state.contadorLaterais = 0;
+  
+  const confirmacaoAlta = closes.slice(-CONFIG.PERIODOS.VELAS_CONFIRMACAO)
+    .every((val, i, arr) => i === 0 || val > arr[i-1]);
+  
+  const confirmacaoBaixa = closes.slice(-CONFIG.PERIODOS.VELAS_CONFIRMACAO)
+    .every((val, i, arr) => i === 0 || val < arr[i-1]);
+  
+  const acimaEMAs = closes.slice(-CONFIG.PERIODOS.VELAS_CONFIRMACAO)
+    .every(val => val > emaCurta && emaCurta > emaLonga);
+  
+  const abaixoEMAs = closes.slice(-CONFIG.PERIODOS.VELAS_CONFIRMACAO)
+    .every(val => val < emaCurta && emaCurta < emaLonga);
+  
+  if (confirmacaoAlta && acimaEMAs) return "FORTE_ALTA";
+  if (confirmacaoBaixa && abaixoEMAs) return "FORTE_BAIXA";
+  if (acimaEMAs) return "ALTA";
+  if (abaixoEMAs) return "BAIXA";
+  
+  return "NEUTRA";
 }
 
 // =============================================
@@ -90,7 +160,6 @@ function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {
   
   let gains = 0, losses = 0;
   
-  // Cálculo inicial
   for (let i = 1; i <= periodo; i++) {
     const diff = closes[i] - closes[i - 1];
     if (diff > 0) gains += diff;
@@ -100,7 +169,6 @@ function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {
   let avgGain = gains / periodo;
   let avgLoss = losses / periodo || 0.001;
 
-  // Cálculo suavizado
   for (let i = periodo + 1; i < closes.length; i++) {
     const diff = closes[i] - closes[i - 1];
     const gain = diff > 0 ? diff : 0;
@@ -171,7 +239,6 @@ function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA,
     const emaRapida = calcularMedia.exponencial(closes, rapida);
     const emaLenta = calcularMedia.exponencial(closes, lenta);
     
-    // Ajuste para alinhar os arrays
     const startIdx = lenta - rapida;
     const macdLinha = emaRapida.slice(startIdx).map((val, idx) => val - emaLenta[idx]);
     const sinalLinha = calcularMedia.exponencial(macdLinha, sinal);
@@ -191,102 +258,106 @@ function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA,
 }
 
 // =============================================
-// SISTEMA DE DECISÃO (REVISADO)
+// SISTEMA DE DECISÃO (APRIMORADO)
 // =============================================
-function avaliarTendencia(closes, emaCurta, emaLonga) {
-  if (closes.length < 3) return "NEUTRA";
-  
-  const ultimoClose = closes[closes.length - 1];
-  const penultimoClose = closes[closes.length - 2];
-  
-  // Filtro de confirmação de tendência
-  if (ultimoClose > emaCurta && emaCurta > emaLonga) {
-    if (ultimoClose > penultimoClose && penultimoClose > closes[closes.length - 3]) {
-      return "FORTE_ALTA";
-    }
-    return "ALTA";
-  }
-  
-  if (ultimoClose < emaCurta && emaCurta < emaLonga) {
-    if (ultimoClose < penultimoClose && penultimoClose < closes[closes.length - 3]) {
-      return "FORTE_BAIXA";
-    }
-    return "BAIXA";
-  }
-  
-  return "NEUTRA";
-}
-
 function calcularScore(indicadores) {
   let score = 50;
 
-  // RSI
+  // RSI - Peso maior em extremos
   if (indicadores.rsi < CONFIG.LIMIARES.RSI_OVERSOLD) {
-    score += 20; // Forte oversold
+    score += 25 * CONFIG.PESOS.RSI;
   } else if (indicadores.rsi > CONFIG.LIMIARES.RSI_OVERBOUGHT) {
-    score -= 20; // Forte overbought
+    score -= 25 * CONFIG.PESOS.RSI;
   } else if (indicadores.rsi < 40) {
-    score += 10; // Potencial oversold
+    score += 12 * CONFIG.PESOS.RSI;
   } else if (indicadores.rsi > 60) {
-    score -= 10; // Potencial overbought
+    score -= 12 * CONFIG.PESOS.RSI;
   }
 
-  // MACD
-  if (indicadores.macd.histograma > 0) {
-    score += (indicadores.macd.histograma * 10); // Peso proporcional ao histograma
-  } else {
-    score += (indicadores.macd.histograma * 10); // Peso negativo se histograma negativo
-  }
+  // MACD - Peso proporcional ao histograma
+  score += (Math.min(Math.max(indicadores.macd.histograma * 15, -20), 20) * CONFIG.PESOS.MACD);
 
   // Tendência
-  if (indicadores.tendencia === "FORTE_ALTA") score += 15;
-  else if (indicadores.tendencia === "ALTA") score += 8;
-  else if (indicadores.tendencia === "FORTE_BAIXA") score -= 15;
-  else if (indicadores.tendencia === "BAIXA") score -= 8;
+  switch(indicadores.tendencia) {
+    case "FORTE_ALTA":
+      score += 18 * CONFIG.PESOS.TENDENCIA;
+      break;
+    case "ALTA":
+      score += 10 * CONFIG.PESOS.TENDENCIA;
+      break;
+    case "FORTE_BAIXA":
+      score -= 18 * CONFIG.PESOS.TENDENCIA;
+      break;
+    case "BAIXA":
+      score -= 10 * CONFIG.PESOS.TENDENCIA;
+      break;
+    case "LATERAL":
+      // Reduz o score em mercados laterais prolongados
+      score -= (Math.min(state.contadorLaterais, 10) * CONFIG.PESOS.LATERALIDADE);
+      break;
+  }
 
   // Volume
-  if (indicadores.volume > indicadores.volumeMedia * 1.5) {
-    score += (indicadores.tendencia.includes("ALTA") ? 10 : -10);
+  if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO) {
+    score += (indicadores.tendencia.includes("ALTA") ? 12 : -12) * CONFIG.PESOS.VOLUME;
   }
 
   // Estocástico
   if (indicadores.stoch.k < CONFIG.LIMIARES.STOCH_OVERSOLD && 
       indicadores.stoch.d < CONFIG.LIMIARES.STOCH_OVERSOLD) {
-    score += 15;
+    score += 15 * CONFIG.PESOS.STOCH;
   }
   if (indicadores.stoch.k > CONFIG.LIMIARES.STOCH_OVERBOUGHT && 
       indicadores.stoch.d > CONFIG.LIMIARES.STOCH_OVERBOUGHT) {
-    score -= 15;
+    score -= 15 * CONFIG.PESOS.STOCH;
   }
 
   // Williams
-  if (indicadores.williams < CONFIG.LIMIARES.WILLIAMS_OVERSOLD) score += 12;
-  if (indicadores.williams > CONFIG.LIMIARES.WILLIAMS_OVERBOUGHT) score -= 12;
+  if (indicadores.williams < CONFIG.LIMIARES.WILLIAMS_OVERSOLD) {
+    score += 12 * CONFIG.PESOS.WILLIAMS;
+  }
+  if (indicadores.williams > CONFIG.LIMIARES.WILLIAMS_OVERBOUGHT) {
+    score -= 12 * CONFIG.PESOS.WILLIAMS;
+  }
 
-  // Evitar sinais repetidos
+  // Confirmação de múltiplos indicadores
+  const confirmacoes = [
+    indicadores.rsi < 40 || indicadores.rsi > 60,
+    Math.abs(indicadores.macd.histograma) > 0.1,
+    indicadores.stoch.k < 30 || indicadores.stoch.k > 70,
+    indicadores.williams < -70 || indicadores.williams > -30
+  ].filter(Boolean).length;
+
+  score += (confirmacoes * 5 * CONFIG.PESOS.CONFIRMACAO);
+
+  // Evitar sinais repetidos consecutivos
   if (state.ultimoSinal) {
-    score += (state.ultimoSinal === "CALL" ? -5 : 5);
+    score += (state.ultimoSinal === "CALL" ? -8 : 8);
   }
 
   return Math.min(100, Math.max(0, Math.round(score)));
 }
 
 function determinarSinal(score, tendencia) {
+  if (tendencia === "LATERAL") {
+    // Em mercados laterais, só opera com score muito alto e confirmação
+    return score > 75 ? "CALL" : "ESPERAR";
+  }
+  
   if (score >= CONFIG.LIMIARES.SCORE_ALTO) {
     return tendencia.includes("ALTA") ? "CALL" : "PUT";
   }
+  
   if (score >= CONFIG.LIMIARES.SCORE_MEDIO) {
-    if (tendencia === "NEUTRA") {
-      // Em tendência neutra, só opera se o score for muito alto
-      return score > 70 ? "CALL" : "ESPERAR";
-    }
+    if (tendencia === "NEUTRA") return score > 70 ? "CALL" : "ESPERAR";
     return tendencia.includes("ALTA") ? "CALL" : "PUT";
   }
+  
   return "ESPERAR";
 }
 
 // =============================================
-// CORE DO SISTEMA (REVISADO)
+// CORE DO SISTEMA (OTIMIZADO)
 // =============================================
 async function obterDadosBinance() {
   for (const endpoint of CONFIG.API_ENDPOINTS) {
@@ -340,13 +411,14 @@ async function analisarMercado() {
 
     const score = calcularScore(indicadores);
     const sinal = determinarSinal(score, indicadores.tendencia);
+    
+    // Atualizar estado
     state.ultimoSinal = sinal !== "ESPERAR" ? sinal : state.ultimoSinal;
+    state.ultimoScore = score;
+    state.ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR");
 
     // Atualização da interface
-    state.ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR");
-    document.getElementById("comando").textContent = sinal;
-    document.getElementById("score").textContent = `Confiança: ${score}%`;
-    document.getElementById("hora").textContent = state.ultimaAtualizacao;
+    atualizarInterface(sinal, score);
 
     document.getElementById("criterios").innerHTML = `
       <li>Tendência: ${indicadores.tendencia.replace('_', ' ')}</li>
@@ -357,18 +429,18 @@ async function analisarMercado() {
       <li>Preço: $${indicadores.close.toFixed(2)}</li>
       <li>Médias: SMA9 ${indicadores.sma9?.toFixed(2) || 'N/A'} | EMA21 ${indicadores.ema21.toFixed(2)} | EMA50 ${indicadores.ema50.toFixed(2)}</li>
       <li>Volume: ${indicadores.volume.toFixed(2)} vs Média ${indicadores.volumeMedia.toFixed(2)}</li>
+      <li>Estado Lateral: ${state.contadorLaterais} períodos</li>
     `;
 
     // Histórico
-    state.ultimos.unshift(`${state.ultimaAtualizacao} - ${sinal} (${score}%)`);
+    state.ultimos.unshift(`${state.ultimaAtualizacao} - ${sinal} (${score}%) - ${indicadores.tendencia}`);
     if (state.ultimos.length > 5) state.ultimos.pop();
     document.getElementById("ultimos").innerHTML = state.ultimos.map(i => `<li>${i}</li>`).join("");
 
     state.tentativasErro = 0;
   } catch (e) {
     console.error("Erro na análise:", e);
-    document.getElementById("comando").textContent = "ERRO";
-    document.getElementById("score").textContent = "Confiança: 0%";
+    atualizarInterface("ERRO", 0);
     
     if (++state.tentativasErro > 3) {
       console.error("Muitos erros consecutivos, reiniciando...");
