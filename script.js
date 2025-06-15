@@ -1,15 +1,18 @@
 // =============================================
-// CONFIGURAÇÕES GLOBAIS
+// CONFIGURAÇÕES GLOBAIS OTIMIZADAS PARA CRYPTO IDX
 // =============================================
 const config = {
-  symbol: "BTCIDX",          // Símbolo do Crypto IDX na Stockity
-  binanceSymbol: "BTCUSDT",  // Símbolo correspondente na Binance
-  multiplier: 1.12,          // Multiplicador de ajuste de volatilidade
-  minConfidence: 68,         // Confiança mínima para entrada (68% para IDX)
-  maxEntries: 2,             // Máximo de entradas consecutivas
-  leverage: 10,              // Alavancagem padrão do IDX
-  stopLossPercent: 5,        // Stop-loss padrão (%)
-  takeProfitPercent: 8       // Take-profit padrão (%)
+  symbol: "BTCIDX",
+  binanceSymbol: "BTCUSDT",
+  multiplier: 1.15,          // Aumentado para refletir maior volatilidade do IDX
+  minConfidence: 72,         // Aumentado para maior assertividade
+  maxEntries: 3,
+  leverage: 10,
+  stopLossPercent: 4,        // Reduzido para o IDX
+  takeProfitPercent: 10,     // Aumentado para o IDX
+  historySize: 15,           // Aumentado de 5 para 15
+  rsiOverbought: 68,         // Ajustado para o IDX
+  rsiOversold: 32            // Ajustado para o IDX
 };
 
 let win = 0, loss = 0;
@@ -23,7 +26,7 @@ let ultimoSinalTimestamp = 0;
 let bloqueioSinal = false;
 
 // =============================================
-// FUNÇÕES DE INDICADORES
+// FUNÇÕES DE INDICADORES (OTIMIZADAS PARA IDX)
 // =============================================
 function calcularEMA(dados, periodo) {
   if (!Array.isArray(dados) || dados.length < periodo) return null;
@@ -65,11 +68,12 @@ function calcularRSI(closes, periodo = 14) {
 // =============================================
 function atualizarRelogio() {
   const agora = new Date();
-  document.getElementById("hora").textContent = agora.toLocaleTimeString("pt-BR", {
+  ultimaAtualizacao = agora.toLocaleTimeString("pt-BR", {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit'
   });
+  document.getElementById("hora").textContent = ultimaAtualizacao;
 }
 
 function formatarTimer(segundos) {
@@ -93,7 +97,7 @@ function registrar(resultado) {
 }
 
 // =============================================
-// LÓGICA PRINCIPAL
+// LÓGICA PRINCIPAL (OTIMIZADA PARA CRYPTO IDX)
 // =============================================
 async function leituraReal() {
   if (leituraEmAndamento || bloqueioSinal) return;
@@ -102,7 +106,7 @@ async function leituraReal() {
   bloqueioSinal = true;
 
   try {
-    // 1. OBTER DADOS DA BINANCE
+    // 1. OBTER DADOS DA BINANCE (como proxy para o IDX)
     const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${config.binanceSymbol}&interval=1m&limit=100`);
     const dados = await response.json();
     const closes = dados.map(c => parseFloat(c[4]));
@@ -110,71 +114,82 @@ async function leituraReal() {
     const lows = dados.map(c => parseFloat(c[3]));
     const volumes = dados.map(c => parseFloat(c[5]));
 
-    // 2. CALCULAR INDICADORES
+    // 2. CALCULAR INDICADORES COM AJUSTES PARA IDX
     const rsi = calcularRSI(closes);
     const ema9 = calcularEMA(closes, 9);
     const ema21 = calcularEMA(closes, 21);
     const ema50 = calcularEMA(closes, 50);
     const volumeMedia = calcularEMA(volumes, 20) || 1;
     const currentVolume = volumes[volumes.length - 1];
+    const currentPrice = closes[closes.length - 1];
 
-    // 3. GERAR SINAL
-    let comando = "ESPERAR";
-    let pontos = 0;
+    // 3. TENDÊNCIA DETALHADA (corrigida e mais visível)
+    const tendencia = currentPrice > ema21 && ema21 > ema50 ? "ALTA" :
+                     currentPrice < ema21 && ema21 < ema50 ? "BAIXA" : 
+                     "LATERAL";
+
+    // 4. SISTEMA DE PONTOS PARA CRYPTO IDX
+    let pontosCALL = 0, pontosPUT = 0;
     let confidence = 50;
 
-    // Critérios para CALL
-    if (rsi < 35 && closes[closes.length - 1] > ema21) {
-      pontos += 2;
-      confidence += (35 - rsi) * 0.5;
+    // Critérios otimizados para o IDX
+    if (rsi < config.rsiOversold && currentPrice > ema21) {
+      pontosCALL += 2;
+      confidence += (config.rsiOversold - rsi) * 0.7; // Mais sensível
     }
 
-    // Critérios para PUT
-    if (rsi > 65 && closes[closes.length - 1] < ema21) {
-      pontos += 2;
-      confidence += (rsi - 65) * 0.5;
+    if (rsi > config.rsiOverbought && currentPrice < ema21) {
+      pontosPUT += 2;
+      confidence += (rsi - config.rsiOverbought) * 0.7; // Mais sensível
     }
 
-    // Volume acima da média
-    if (currentVolume > volumeMedia * 1.5) {
-      pontos += 1;
+    // Volume com ajuste maior para o IDX
+    if (currentVolume > volumeMedia * 1.8) { // Limiar aumentado
+      pontosCALL += 1;
+      pontosPUT += 1;
+      confidence += 15;
+    }
+
+    // Tendência com peso maior
+    if (tendencia === "ALTA") {
+      pontosCALL += 2;
+      confidence += 10;
+    } else if (tendencia === "BAIXA") {
+      pontosPUT += 2;
       confidence += 10;
     }
 
-    // Tendência de médias
-    if (ema21 > ema50) {
-      pontos += 1;
-      confidence += 5;
-    } else {
-      pontos -= 1;
-      confidence -= 5;
+    // 5. DECISÃO FINAL COM FILTROS PARA IDX
+    let comando = "ESPERAR";
+    confidence = Math.min(100, Math.max(config.minConfidence, confidence)); // Garante mínimo
+    
+    if (pontosCALL >= 4 && confidence >= config.minConfidence && tendencia !== "BAIXA") {
+      comando = "CALL";
+    } else if (pontosPUT >= 4 && confidence >= config.minConfidence && tendencia !== "ALTA") {
+      comando = "PUT";
     }
 
-    // Decisão final
-    confidence = Math.min(100, Math.max(0, confidence));
-    if (pontos >= 3 && confidence >= config.minConfidence) {
-      comando = closes[closes.length - 1] > ema21 ? "CALL" : "PUT";
-    }
-
-    // 4. ATUALIZAR INTERFACE
+    // 6. ATUALIZAR INTERFACE COMPLETA
     document.getElementById("comando").textContent = comando;
     document.getElementById("score").textContent = `Confiança: ${Math.round(confidence)}%`;
     atualizarRelogio();
 
+    // CRITÉRIOS TÉCNICOS COMPLETOS (com tendência fixada)
     document.getElementById("criterios").innerHTML = `
-      <li>Tendência: ${ema21 > ema50 ? 'ALTA' : 'BAIXA'}</li>
-      <li>RSI: ${rsi.toFixed(2)}</li>
+      <li>Preço: $${currentPrice.toFixed(2)}</li>
+      <li>Tendência: <strong>${tendencia}</strong></li>
+      <li>RSI: ${rsi.toFixed(2)} ${rsi < config.rsiOversold ? '🔻' : rsi > config.rsiOverbought ? '🔺' : ''}</li>
       <li>EMA9: ${ema9?.toFixed(2) || 'N/A'}</li>
       <li>EMA21: ${ema21?.toFixed(2) || 'N/A'}</li>
       <li>EMA50: ${ema50?.toFixed(2) || 'N/A'}</li>
       <li>Volume: ${(currentVolume/volumeMedia).toFixed(2)}x média</li>
     `;
 
-    // 5. REGISTRAR SINAL E TOCAR SOM
+    // 7. REGISTRAR SINAL (histórico aumentado para 15)
     if (comando !== "ESPERAR") {
       tocarSom(comando);
       ultimos.unshift(`${ultimaAtualizacao} - ${comando} (${Math.round(confidence)}%)`);
-      if (ultimos.length > 5) ultimos.pop();
+      if (ultimos.length > config.historySize) ultimos.pop();
       document.getElementById("ultimos").innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
       ultimoSinalTimestamp = Date.now();
     }
@@ -233,9 +248,9 @@ function iniciarAplicativo() {
     try {
       const response = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${config.binanceSymbol}`);
       const data = await response.json();
-      const priceElement = document.querySelector("#criterios li:first-child");
-      if (priceElement) {
-        priceElement.textContent = `Preço: $${parseFloat(data.price).toFixed(2)}`;
+      const priceElements = document.querySelectorAll("#criterios li");
+      if (priceElements.length > 0) {
+        priceElements[0].innerHTML = `Preço: $${parseFloat(data.price).toFixed(2)}`;
       }
     } catch (e) {
       console.error("Erro ao atualizar preço:", e);
