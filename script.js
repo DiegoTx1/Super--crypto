@@ -1,5 +1,5 @@
 // =============================================
-// CONFIGURAÇÕES GLOBAIS (ATUALIZADAS PARA 2025)
+// CONFIGURAÇÕES GLOBAIS (ATUALIZADAS 2025)
 // =============================================
 const state = {
   ultimos: [],
@@ -12,15 +12,12 @@ const state = {
   ultimoScore: 0,
   contadorLaterais: 0,
   websocket: null,
-  apiKeys: [
-    "demo",
-    "seu_outra_chave_1",
-    "seu_outra_chave_2"
-  ],
+  apiKeys: ["demo", "seu_outra_chave_1", "seu_outra_chave_2"],
   currentApiKeyIndex: 0,
   marketOpen: true,
-  activeMarkets: [],
-  winLossStats: { wins: 0, losses: 0, winRate: 0 } // Novo histórico Win/Loss
+  marketSession: "",
+  exhaustionCount: 0,
+  lastSignalTime: null
 };
 
 const CONFIG = {
@@ -30,72 +27,69 @@ const CONFIG = {
     "https://api.exchangerate-api.com"
   ],
   WS_ENDPOINT: "wss://stream.twelvedata.com/v1/quotes/price",
-  PARES: {
-    EURUSD: "EUR/USD"
-  },
+  PARES: { EURUSD: "EUR/USD" },
   PERIODOS: {
-    // Atualizados para estratégias 2025
-    RSI: 11, // Otimizado para EURUSD
+    RSI: 14,
     STOCH: 11,
-    WILLIAMS: 11,
-    EMA_CURTA: 7,  // EMA mais sensível
-    EMA_LONGA: 19, // Melhor combinação com EMA7
-    EMA_200: 200,
-    SMA_VOLUME: 14,
-    MACD_RAPIDA: 10, // Ajustes para melhor timing
-    MACD_LENTA: 22,
-    MACD_SINAL: 7,
-    VELAS_CONFIRMACAO: 2, // Confirmação mais rápida
-    ANALISE_LATERAL: 28,
-    VWAP: 14,
-    ATR: 11,
-    SUPER_TREND: 10, // Novo indicador adicionado
-    SUPER_TREND_MULTIPLIER: 3.2
+    WILLIAMS: 14,
+    EMA_CURTA: 8,   // Atualizado para 8 (melhor resposta)
+    EMA_LONGA: 34,  // Atualizado para 34 (ótimo para tendências)
+    EMA_200: 89,    // Atualizado para 89 (melhor para EUR/USD)
+    SMA_VOLUME: 20,
+    MACD_RAPIDA: 12,
+    MACD_LENTA: 26,
+    MACD_SINAL: 9,
+    VELAS_CONFIRMACAO: 3,
+    ANALISE_LATERAL: 30,
+    VWAP: 20,
+    ATR: 14,
+    SUPER_TREND: 10,
+    KALMAN_FILTER: 0.2
   },
   LIMIARES: {
-    SCORE_ALTO: 78,  // Mais exigente
+    SCORE_ALTO: 82,  // Aumentado para maior confiabilidade
     SCORE_MEDIO: 68,
-    RSI_OVERBOUGHT: 68, // Ajustados para 2025
-    RSI_OVERSOLD: 32,
-    STOCH_OVERBOUGHT: 82,
-    STOCH_OVERSOLD: 18,
-    WILLIAMS_OVERBOUGHT: -18,
-    WILLIAMS_OVERSOLD: -82,
-    VOLUME_ALTO: 1.4,
-    VARIACAO_LATERAL: 0.7,
+    RSI_OVERBOUGHT: 70,
+    RSI_OVERSOLD: 30,
+    STOCH_OVERBOUGHT: 85,
+    STOCH_OVERSOLD: 15,
+    WILLIAMS_OVERBOUGHT: -15,
+    WILLIAMS_OVERSOLD: -85,
+    VOLUME_ALTO: 1.5,
+    VARIACAO_LATERAL: 0.5,
     VWAP_DESVIO: 0.0012,
-    ATR_LIMIAR: 0.0009,
-    SUPER_TREND_CONFIRM: 1.5 // Novo limiar
+    ATR_LIMIAR: 0.0008,
+    SUPER_TREND_FATOR: 3.0,
+    EXAUSTAO_MAX: 3
   },
   PESOS: {
-    // Rebalanceados para 2025
-    RSI: 1.4,
+    RSI: 1.3,
     MACD: 1.8,
-    TENDENCIA: 1.7,
-    VOLUME: 0.9,
-    STOCH: 1.1,
+    TENDENCIA: 2.0,  // Maior peso para tendência
+    VOLUME: 1.0,
+    STOCH: 1.0,
     WILLIAMS: 0.9,
     CONFIRMACAO: 1.2,
-    LATERALIDADE: 1.9,
+    LATERALIDADE: 1.5,
     VWAP: 1.4,
     VOLATILIDADE: 1.3,
-    SUPER_TREND: 1.6 // Novo peso
+    SUPER_TREND: 1.7
   },
   RISCO: {
-    MAX_RISCO_POR_OPERACAO: 0.02,
-    R_R_MINIMO: 1.7, // Aumentado para 2025
-    ATR_MULTIPLICADOR_SL: 1.7,
+    MAX_RISCO_POR_OPERACAO: 0.015,
+    R_R_MINIMO: 2.0,
+    ATR_MULTIPLICADOR_SL: 1.8,
     ATR_MULTIPLICADOR_TP: 3.2
   },
   MARKET_HOURS: {
-    LONDON_OPEN: 7,
-    LONDON_CLOSE: 16,
-    NY_OPEN: 13,
-    NY_CLOSE: 22,
-    TOKYO_OPEN: 0,
-    TOKYO_CLOSE: 9,
-    SYDNEY_OPEN: 22,
-    SYDNEY_CLOSE: 7
+    SYDNEY_OPEN: 22,  // 22:00 GMT
+    SYDNEY_CLOSE: 7,  // 07:00 GMT
+    TOKYO_OPEN: 0,    // 00:00 GMT
+    TOKYO_CLOSE: 9,   // 09:00 GMT
+    LONDON_OPEN: 8,   // 08:00 GMT
+    LONDON_CLOSE: 17, // 17:00 GMT
+    NY_OPEN: 13,      // 13:00 GMT
+    NY_CLOSE: 22      // 22:00 GMT
   }
 };
 
@@ -116,26 +110,28 @@ function atualizarRelogio() {
       second: '2-digit'
     });
     
-    // Verificar horário de mercado (atualizado para 2025)
+    // Verificar horário de mercado atualizado
     const gmtHours = now.getUTCHours();
-    const isLondonOpen = gmtHours >= CONFIG.MARKET_HOURS.LONDON_OPEN && gmtHours < CONFIG.MARKET_HOURS.LONDON_CLOSE;
-    const isNYOpen = gmtHours >= CONFIG.MARKET_HOURS.NY_OPEN && gmtHours < CONFIG.MARKET_HOURS.NY_CLOSE;
-    const isTokyoOpen = gmtHours >= CONFIG.MARKET_HOURS.TOKYO_OPEN && gmtHours < CONFIG.MARKET_HOURS.TOKYO_CLOSE;
-    const isSydneyOpen = (gmtHours >= CONFIG.MARKET_HOURS.SYDNEY_OPEN || gmtHours < CONFIG.MARKET_HOURS.SYDNEY_CLOSE);
+    let session = "";
     
-    state.activeMarkets = [];
-    if (isLondonOpen) state.activeMarkets.push("LON");
-    if (isNYOpen) state.activeMarkets.push("NY");
-    if (isTokyoOpen) state.activeMarkets.push("TKY");
-    if (isSydneyOpen) state.activeMarkets.push("SYD");
+    if ((gmtHours >= CONFIG.MARKET_HOURS.SYDNEY_OPEN || gmtHours < CONFIG.MARKET_HOURS.SYDNEY_CLOSE) && 
+        gmtHours < CONFIG.MARKET_HOURS.TOKYO_CLOSE) {
+      session = "Sidney/Tóquio";
+    } else if (gmtHours >= CONFIG.MARKET_HOURS.LONDON_OPEN && gmtHours < CONFIG.MARKET_HOURS.LONDON_CLOSE) {
+      session = "Londres";
+    } else if (gmtHours >= CONFIG.MARKET_HOURS.NY_OPEN && gmtHours < CONFIG.MARKET_HOURS.NY_CLOSE) {
+      session = "Nova York";
+    } else {
+      session = "Fechado";
+    }
     
-    state.marketOpen = isLondonOpen || isNYOpen || isTokyoOpen || isSydneyOpen;
+    state.marketSession = session;
+    state.marketOpen = session !== "Fechado";
     
     const marketStatusElement = document.getElementById("market-status");
     if (marketStatusElement) {
-      marketStatusElement.innerHTML = state.marketOpen 
-        ? `Mercado Aberto (${state.activeMarkets.join(", ")}) <span class="market-open">🟢</span>`
-        : `Mercado Fechado <span class="market-closed">🔴</span>`;
+      marketStatusElement.textContent = `Mercado: ${session}`;
+      marketStatusElement.className = session !== "Fechado" ? "market-open" : "market-closed";
     }
     
     if (!state.marketOpen) {
@@ -145,53 +141,8 @@ function atualizarRelogio() {
   }
 }
 
-function atualizarWinLossStats(resultado) {
-  if (resultado === 'win') {
-    state.winLossStats.wins++;
-  } else if (resultado === 'loss') {
-    state.winLossStats.losses++;
-  }
-  
-  const total = state.winLossStats.wins + state.winLossStats.losses;
-  state.winLossStats.winRate = total > 0 ? (state.winLossStats.wins / total * 100) : 0;
-  
-  const winLossElement = document.getElementById("win-loss-stats");
-  if (winLossElement) {
-    winLossElement.innerHTML = `
-      <div>Vitórias: <span class="win">${state.winLossStats.wins}</span></div>
-      <div>Derrotas: <span class="loss">${state.winLossStats.losses}</span></div>
-      <div>Taxa Acerto: <span class="rate">${state.winLossStats.winRate.toFixed(1)}%</span></div>
-    `;
-  }
-}
-
-function atualizarInterface(sinal, score) {
-  if (!state.marketOpen) return;
-  
-  const comandoElement = document.getElementById("comando");
-  if (comandoElement) {
-    comandoElement.textContent = sinal;
-    comandoElement.className = sinal.toLowerCase();
-    
-    if (sinal === "CALL") comandoElement.textContent += " 📈";
-    else if (sinal === "PUT") comandoElement.textContent += " 📉";
-    else if (sinal === "ESPERAR") comandoElement.textContent += " ✋";
-  }
-  
-  const scoreElement = document.getElementById("score");
-  if (scoreElement) {
-    scoreElement.textContent = `Confiança: ${score}%`;
-    if (score >= CONFIG.LIMIARES.SCORE_ALTO) scoreElement.style.color = '#00ff00';
-    else if (score >= CONFIG.LIMIARES.SCORE_MEDIO) scoreElement.style.color = '#ffff00';
-    else scoreElement.style.color = '#ff0000';
-  }
-  
-  const horaElement = document.getElementById("hora");
-  if (horaElement) horaElement.textContent = state.ultimaAtualizacao;
-}
-
 // =============================================
-// INDICADORES TÉCNICOS (ATUALIZADOS PARA 2025)
+// INDICADORES TÉCNICOS (ATUALIZADOS 2025)
 // =============================================
 const calcularMedia = {
   simples: (dados, periodo) => {
@@ -201,61 +152,86 @@ const calcularMedia = {
   },
 
   exponencial: (dados, periodo) => {
-    if (!Array.isArray(dados) || dados.length < periodo) return [];
-    
+    if (!Array.isArray(dados) return [];
     const k = 2 / (periodo + 1);
-    let ema = calcularMedia.simples(dados.slice(0, periodo), periodo);
+    let ema = dados[0];
     const emaArray = [ema];
     
-    for (let i = periodo; i < dados.length; i++) {
+    for (let i = 1; i < dados.length; i++) {
       ema = dados[i] * k + ema * (1 - k);
       emaArray.push(ema);
     }
     
     return emaArray;
+  },
+
+  kalman: (dados, noiseRatio = CONFIG.PERIODOS.KALMAN_FILTER) => {
+    if (!Array.isArray(dados)) return [];
+    let filtered = [dados[0]];
+    let estimate = dados[0];
+    let errorCovariance = 1;
+    
+    for (let i = 1; i < dados.length; i++) {
+      const prediction = estimate;
+      const predictionCovariance = errorCovariance + noiseRatio;
+      const gain = predictionCovariance / (predictionCovariance + noiseRatio);
+      estimate = prediction + gain * (dados[i] - prediction);
+      errorCovariance = (1 - gain) * predictionCovariance;
+      filtered.push(estimate);
+    }
+    
+    return filtered;
   }
 };
 
-// Novo indicador SuperTrend para 2025
-function calcularSuperTrend(highs, lows, closes, periodo = CONFIG.PERIODOS.SUPER_TREND, multiplier = CONFIG.PERIODOS.SUPER_TREND_MULTIPLIER) {
-  if (!Array.isArray(closes) || closes.length < periodo) return { trend: 0, direction: 'neutral' };
+function calcularSuperTrend(highs, lows, closes, periodo = CONFIG.PERIODOS.SUPER_TREND) {
+  const atr = calcularATR(highs, lows, closes, periodo);
+  const basicUpper = highs.map((h, i) => (h + l[i]) / 2 + CONFIG.LIMIARES.SUPER_TREND_FATOR * atr[i]);
+  const basicLower = lows.map((l, i) => (h[i] + l) / 2 - CONFIG.LIMIARES.SUPER_TREND_FATOR * atr[i]);
   
-  const atrValues = [];
+  let upperBand = [basicUpper[0]];
+  let lowerBand = [basicLower[0]];
+  let trend = [1];
+  
   for (let i = 1; i < closes.length; i++) {
-    const tr = Math.max(
-      highs[i] - lows[i],
-      Math.abs(highs[i] - closes[i-1]),
-      Math.abs(lows[i] - closes[i-1])
+    upperBand.push(
+      basicUpper[i] < upperBand[i-1] || closes[i-1] > upperBand[i-1] 
+        ? basicUpper[i] 
+        : upperBand[i-1]
     );
-    atrValues.push(tr);
+    
+    lowerBand.push(
+      basicLower[i] > lowerBand[i-1] || closes[i-1] < lowerBand[i-1] 
+        ? basicLower[i] 
+        : lowerBand[i-1]
+    );
+    
+    trend.push(
+      trend[i-1] === 1 && closes[i] > lowerBand[i] ? 1 :
+      trend[i-1] === -1 && closes[i] < upperBand[i] ? -1 :
+      trend[i-1] === 1 ? -1 : 1
+    );
   }
   
-  const atr = calcularMedia.simples(atrValues.slice(-periodo), periodo);
-  const basicUpper = (highs[highs.length-1] + lows[lows.length-1]) / 2 + multiplier * atr;
-  const basicLower = (highs[highs.length-1] + lows[lows.length-1]) / 2 - multiplier * atr;
-  
-  // Lógica simplificada para determinação de tendência
-  const close = closes[closes.length-1];
-  let direction = 'neutral';
-  
-  if (close > basicUpper) direction = 'up';
-  else if (close < basicLower) direction = 'down';
-  
   return {
-    upper: basicUpper,
-    lower: basicLower,
-    atr: atr,
-    direction: direction
+    trend: trend[trend.length-1],
+    upper: upperBand[upperBand.length-1],
+    lower: lowerBand[lowerBand.length-1]
   };
 }
 
 function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {
-  if (!Array.isArray(closes) || closes.length < periodo + 1) return 50;
+  if (closes.length < periodo + 1) return 50;
+  
+  // RSI adaptativo baseado na volatilidade
+  const atr = calcularATR(closes.map((c, i) => c), closes.map(c => c), closes, periodo);
+  const avgATR = calcularMedia.simples(atr, periodo) || 0.0001;
+  const currentATR = atr[atr.length-1] || 0.0001;
+  const adaptFactor = Math.min(2, Math.max(0.5, currentATR / avgATR));
   
   let gains = 0, losses = 0;
-  
   for (let i = 1; i <= periodo; i++) {
-    const diff = closes[i] - closes[i - 1];
+    const diff = closes[i] - closes[i-1];
     if (diff > 0) gains += diff;
     else losses += Math.abs(diff);
   }
@@ -264,9 +240,9 @@ function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {
   let avgLoss = Math.max(losses / periodo, 1e-8);
 
   for (let i = periodo + 1; i < closes.length; i++) {
-    const diff = closes[i] - closes[i - 1];
-    const gain = diff > 0 ? diff : 0;
-    const loss = diff < 0 ? Math.abs(diff) : 0;
+    const diff = closes[i] - closes[i-1];
+    const gain = diff > 0 ? diff * adaptFactor : 0;
+    const loss = diff < 0 ? Math.abs(diff) * adaptFactor : 0;
     
     avgGain = (avgGain * (periodo - 1) + gain) / periodo;
     avgLoss = Math.max((avgLoss * (periodo - 1) + loss) / periodo, 1e-8);
@@ -277,7 +253,7 @@ function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {
 }
 
 // =============================================
-// SISTEMA DE DECISÃO (ATUALIZADO PARA 2025)
+// SISTEMA DE DECISÃO (ATUALIZADO 2025)
 // =============================================
 function avaliarTendencia(closes, emaCurta, emaLonga, ema200, superTrend) {
   if (closes.length < CONFIG.PERIODOS.VELAS_CONFIRMACAO) return "NEUTRA";
@@ -292,34 +268,27 @@ function avaliarTendencia(closes, emaCurta, emaLonga, ema200, superTrend) {
   const ultimoClose = closes[closes.length - 1];
   const penultimoClose = closes[closes.length - 2];
   
-  // Nova lógica de tendência com SuperTrend
-  const superTrendDirection = superTrend.direction;
-  const emaDirection = emaCurta > emaLonga ? 'up' : 'down';
+  // Confirmação de tendência com SuperTrend
+  const superTrendConfirmation = superTrend.trend === 1 ? "ALTA" : "BAIXA";
   
-  // Confirmação de tendência com múltiplos indicadores
-  let trendStrength = 0;
-  if (superTrendDirection === 'up') trendStrength++;
-  if (emaDirection === 'up') trendStrength++;
-  if (ultimoClose > ema200) trendStrength++;
+  // Múltiplas confirmações
+  const emaShortAboveLong = emaCurta > emaLonga;
+  const emaLongAbove200 = emaLonga > ema200;
+  const priceAboveAllEMAs = ultimoClose > emaCurta && ultimoClose > emaLonga && ultimoClose > ema200;
   
-  if (trendStrength >= 2) {
-    // Tendência de alta confirmada
-    if (ultimoClose > emaCurta && emaCurta > emaLonga && superTrendDirection === 'up') {
-      return "FORTE_ALTA";
-    }
+  if (superTrendConfirmation === "ALTA" && emaShortAboveLong && emaLongAbove200 && priceAboveAllEMAs) {
+    return "FORTE_ALTA";
+  }
+  
+  if (superTrendConfirmation === "BAIXA" && !emaShortAboveLong && !emaLongAbove200 && !priceAboveAllEMAs) {
+    return "FORTE_BAIXA";
+  }
+  
+  if (superTrendConfirmation === "ALTA" && (emaShortAboveLong || priceAboveAllEMAs)) {
     return "ALTA";
   }
   
-  trendStrength = 0;
-  if (superTrendDirection === 'down') trendStrength++;
-  if (emaDirection === 'down') trendStrength++;
-  if (ultimoClose < ema200) trendStrength++;
-  
-  if (trendStrength >= 2) {
-    // Tendência de baixa confirmada
-    if (ultimoClose < emaCurta && emaCurta < emaLonga && superTrendDirection === 'down') {
-      return "FORTE_BAIXA";
-    }
+  if (superTrendConfirmation === "BAIXA" && (!emaShortAboveLong || !priceAboveAllEMAs)) {
     return "BAIXA";
   }
   
@@ -329,135 +298,128 @@ function avaliarTendencia(closes, emaCurta, emaLonga, ema200, superTrend) {
 function calcularScore(indicadores) {
   let score = 50;
 
-  // Análise de RSI (atualizada para 2025)
-  if (indicadores.rsi < CONFIG.LIMIARES.RSI_OVERSOLD) {
-    score += 25 * CONFIG.PESOS.RSI;
-    if (indicadores.tendencia.includes("BAIXA")) score -= 12; // Penalidade maior
-  }
-  else if (indicadores.rsi > CONFIG.LIMIARES.RSI_OVERBOUGHT) {
-    score -= 25 * CONFIG.PESOS.RSI;
-    if (indicadores.tendencia.includes("ALTA")) score += 12;
-  }
-
-  // Análise MACD (com filtro de ruído)
-  const macdNoiseFilter = Math.abs(indicadores.macd.histograma) > 0.03 ? 1 : 0.5;
-  score += (Math.min(Math.max(indicadores.macd.histograma * 10, -15), 15) * CONFIG.PESOS.MACD * macdNoiseFilter);
-
-  // Análise de Tendência com SuperTrend
+  // Sistema de pontuação aprimorado com filtro de qualidade
+  const qualityFilter = Math.min(1, indicadores.atr / CONFIG.LIMIARES.ATR_LIMIAR);
+  
+  // Análise de tendência (maior peso)
   switch(indicadores.tendencia) {
     case "FORTE_ALTA": 
-      score += 22 * CONFIG.PESOS.TENDENCIA;
-      if (indicadores.superTrend.direction === 'up') score += 8;
+      score += 25 * CONFIG.PESOS.TENDENCIA * qualityFilter; 
       break;
-    case "ALTA": score += 14 * CONFIG.PESOS.TENDENCIA; break;
+    case "ALTA": 
+      score += 15 * CONFIG.PESOS.TENDENCIA * qualityFilter; 
+      break;
     case "FORTE_BAIXA": 
-      score -= 22 * CONFIG.PESOS.TENDENCIA;
-      if (indicadores.superTrend.direction === 'down') score -= 8;
+      score -= 25 * CONFIG.PESOS.TENDENCIA * qualityFilter; 
       break;
-    case "BAIXA": score -= 14 * CONFIG.PESOS.TENDENCIA; break;
+    case "BAIXA": 
+      score -= 15 * CONFIG.PESOS.TENDENCIA * qualityFilter; 
+      break;
     case "LATERAL": 
       score -= Math.min(state.contadorLaterais, 15) * CONFIG.PESOS.LATERALIDADE;
       break;
   }
 
-  // Nova lógica de exaustão para evitar sinais contra tendência
-  if (indicadores.tendencia.includes("ALTA") && 
-      indicadores.rsi > CONFIG.LIMIARES.RSI_OVERBOUGHT &&
-      indicadores.stoch.k > CONFIG.LIMIARES.STOCH_OVERBOUGHT) {
-    score -= 20; // Penalidade forte para operações contra tendência
-  }
-  
-  if (indicadores.tendencia.includes("BAIXA") && 
-      indicadores.rsi < CONFIG.LIMIARES.RSI_OVERSOLD &&
-      indicadores.stoch.k < CONFIG.LIMIARES.STOCH_OVERSOLD) {
-    score += 20;
+  // Confirmação SuperTrend
+  if (indicadores.superTrend.trend === 1 && indicadores.tendencia.includes("ALTA")) {
+    score += 12 * CONFIG.PESOS.SUPER_TREND;
+  } else if (indicadores.superTrend.trend === -1 && indicadores.tendencia.includes("BAIXA")) {
+    score -= 12 * CONFIG.PESOS.SUPER_TREND;
   }
 
-  // Restante da função mantido com pequenos ajustes...
-  
+  // Restante das análises (similar ao original, mas com ajustes de peso)
+  // ... (manter as outras análises do seu código original)
+
+  // Ajuste final baseado em exaustão
+  if (state.exhaustionCount > 0) {
+    score -= state.exhaustionCount * 5;
+  }
+
   return Math.min(100, Math.max(0, Math.round(score)));
 }
 
-// =============================================
-// CORE DO SISTEMA (ATUALIZADO)
-// =============================================
-async function analisarMercado() {
-  if (state.leituraEmAndamento || !state.marketOpen) return;
-  state.leituraEmAndamento = true;
-  try {
-    const dados = await obterDadosForex();
-    const velaAtual = dados[dados.length - 1];
-    const closes = dados.map(v => v.close);
-    const highs = dados.map(v => v.high);
-    const lows = dados.map(v => v.low);
-    const volumes = dados.map(v => v.volume);
-
-    const emaCurtaArray = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_CURTA);
-    const emaLongaArray = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_LONGA);
-    const ema200Array  = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_200);
-    const emaCurta = emaCurtaArray.slice(-1)[0] || 0;
-    const emaLonga = emaLongaArray.slice(-1)[0] || 0;
-    const ema200   = ema200Array.slice(-1)[0] || 0;
-    
-    // Novo cálculo SuperTrend
-    const superTrend = calcularSuperTrend(highs, lows, closes);
-
-    const indicadores = {
-      rsi: calcularRSI(closes),
-      macd: calcularMACD(closes),
-      emaCurta,
-      emaLonga,
-      ema200,
-      volume: velaAtual.volume,
-      volumeMedia: calcularMedia.simples(volumes, CONFIG.PERIODOS.SMA_VOLUME) || 1,
-      stoch: calcularStochastic(highs, lows, closes),
-      williams: calcularWilliams(highs, lows, closes),
-      vwap: calcularVWAP(dados),
-      atr: calcularATR(dados),
-      superTrend, // Novo indicador
-      close: velaAtual.close,
-      tendencia: avaliarTendencia(closes, emaCurta, emaLonga, ema200, superTrend)
-    };
-
-    const score = calcularScore(indicadores);
-    const sinal = determinarSinal(score, indicadores.tendencia);
-
-    // Atualizar histórico Win/Loss
-    if (state.ultimoSinal && sinal !== "ESPERAR" && state.ultimoSinal !== sinal) {
-      const resultado = (state.ultimoSinal === "CALL" && indicadores.close > state.ultimoPreco) ||
-                       (state.ultimoSinal === "PUT" && indicadores.close < state.ultimoPreco) ? 'win' : 'loss';
-      atualizarWinLossStats(resultado);
-    }
-
-    state.ultimoSinal = sinal !== "ESPERAR" ? sinal : state.ultimoSinal;
-    state.ultimoScore = score;
-    state.ultimoPreco = indicadores.close;
-    state.ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR");
-
-    atualizarInterface(sinal, score);
-
-    // Restante da função mantido...
-  } catch (e) {
-    console.error("Erro na análise:", e);
-    atualizarInterface("ERRO", 0);
-  } finally {
-    state.leituraEmAndamento = false;
+function determinarSinal(score, tendencia, indicadores) {
+  // Verificar condições de exaustão
+  const now = new Date();
+  const timeSinceLastSignal = state.lastSignalTime ? (now - state.lastSignalTime) / 60000 : 60;
+  
+  if (timeSinceLastSignal < 15 && state.exhaustionCount >= CONFIG.LIMIARES.EXAUSTAO_MAX) {
+    state.exhaustionCount++;
+    return "ESPERAR";
   }
+
+  if (tendencia === "LATERAL") {
+    if (score > 85 && indicadores.atr > CONFIG.LIMIARES.ATR_LIMIAR * 1.5) {
+      state.exhaustionCount = 0;
+      state.lastSignalTime = now;
+      return score > 90 ? "CALL" : "PUT";
+    }
+    return "ESPERAR";
+  }
+
+  if (score >= CONFIG.LIMIARES.SCORE_ALTO) {
+    state.exhaustionCount = 0;
+    state.lastSignalTime = now;
+    return tendencia.includes("ALTA") ? "CALL" : "PUT";
+  }
+
+  if (score >= CONFIG.LIMIARES.SCORE_MEDIO && timeSinceLastSignal > 30) {
+    state.exhaustionCount++;
+    state.lastSignalTime = now;
+    return tendencia.includes("ALTA") ? "CALL" : "PUT";
+  }
+
+  state.exhaustionCount = Math.max(0, state.exhaustionCount - 0.5);
+  return "ESPERAR";
 }
 
 // =============================================
-// INICIALIZAÇÃO (ATUALIZADA)
+// RESTANTE DO CÓDIGO (MANTIDO COM PEQUENOS AJUSTES)
 // =============================================
+// ... (manter o restante do seu código original, incluindo as funções de atualização de interface,
+// obtenção de dados, backtesting, etc., com os ajustes necessários para trabalhar com as novas
+// configurações e indicadores)
+
 function iniciarAplicativo() {
-  const ids=['comando','score','hora','timer','criterios','ultimos','market-status','win-loss-stats'];
+  // Adicionar elemento de status do mercado se não existir
+  if (!document.getElementById("market-status")) {
+    const marketStatus = document.createElement('div');
+    marketStatus.id = "market-status";
+    marketStatus.style.position = 'fixed';
+    marketStatus.style.top = '10px';
+    marketStatus.style.right = '10px';
+    marketStatus.style.padding = '5px 10px';
+    marketStatus.style.borderRadius = '5px';
+    marketStatus.style.fontWeight = 'bold';
+    document.body.appendChild(marketStatus);
+  }
+
+  // Restante da inicialização original
+  const ids=['comando','score','hora','timer','criterios','ultimos'];
   const falt = ids.filter(id=>!document.getElementById(id));
-  if (falt.length>0) { console.error("Faltam elementos:",falt); return; }
+  if (falt.length>0) { console.error("Faltam:",falt); return; }
   
   setInterval(atualizarRelogio,1000);
   sincronizarTimer();
   iniciarWebSocket();
   analisarMercado();
   
-  // Inicializar Win/Loss Stats
-  atualizarWinLossStats();
+  // Botão para backtesting (opcional)
+  const backtestBtn = document.createElement('button');
+  backtestBtn.textContent = 'Executar Backtest (5 dias)';
+  backtestBtn.style.position = 'fixed';
+  backtestBtn.style.bottom = '10px';
+  backtestBtn.style.right = '10px';
+  backtestBtn.style.zIndex = '1000';
+  backtestBtn.onclick = () => {
+    backtestBtn.textContent = 'Calculando...';
+    backtestSimples().then(() => {
+      backtestBtn.textContent = 'Backtest Completo (ver console)';
+      setTimeout(() => backtestBtn.textContent = 'Executar Backtest (5 dias)', 3000);
+    });
+  };
+  document.body.appendChild(backtestBtn);
 }
+
+if(document.readyState==="complete") iniciarAplicativo();
+else document.addEventListener("DOMContentLoaded", iniciarAplicativo);
