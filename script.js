@@ -90,7 +90,7 @@ function atualizarInterface(sinal, score) {
   const comandoElement = document.getElementById("comando");
   if (comandoElement) {
     comandoElement.textContent = sinal;
-    comandoElement.className = sinal.toLowerCase();
+    comandoElement.className = sinal.toLowerCase().replace(/[^a-z]/g, '');
   }
   
   const scoreElement = document.getElementById("score");
