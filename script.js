@@ -70,7 +70,9 @@ const CONFIG = {
 // FUNÇÕES UTILITÁRIAS
 // =============================================
 function formatarTimer(segundos) {
-  return `0:${segundos.toString().padStart(2, '0')}`;
+  const mins = Math.floor(segundos / 60);
+  const segs = segundos % 60;
+  return `${mins}:${segs.toString().padStart(2, '0')}`;
 }
 
 function atualizarRelogio() {
@@ -233,34 +235,42 @@ function calcularATR(highs, lows, closes, periodo = CONFIG.PERIODOS.ATR) {
     );
     trs.push(tr);
   }
-  return calcularMedia.simples(trs.slice(-periodo), periodo) || 0;
+  return calcularMedia.exponencial(trs, periodo).pop() || 0;
 }
 
 function calcularADX(highs, lows, closes, periodo = CONFIG.PERIODOS.ADX) {
   if (closes.length < periodo * 2) return 0;
   
-  let sumPositiveDM = 0;
-  let sumNegativeDM = 0;
-  let sumTR = 0;
+  const trs = [], plusDMs = [], minusDMs = [];
   
-  for (let i = 1; i <= periodo; i++) {
-    const highDiff = highs[i] - highs[i-1];
-    const lowDiff = lows[i-1] - lows[i];
-    
-    sumPositiveDM += highDiff > lowDiff ? Math.max(highDiff, 0) : 0;
-    sumNegativeDM += lowDiff > highDiff ? Math.max(lowDiff, 0) : 0;
-    sumTR += Math.max(
+  for (let i = 1; i < closes.length; i++) {
+    const tr = Math.max(
       highs[i] - lows[i],
       Math.abs(highs[i] - closes[i-1]),
       Math.abs(lows[i] - closes[i-1])
     );
+    const plusDM = highs[i] - highs[i-1] > lows[i-1] - lows[i] 
+      ? Math.max(highs[i] - highs[i-1], 0) : 0;
+    const minusDM = lows[i-1] - lows[i] > highs[i] - highs[i-1] 
+      ? Math.max(lows[i-1] - lows[i], 0) : 0;
+    
+    trs.push(tr);
+    plusDMs.push(plusDM);
+    minusDMs.push(minusDM);
   }
+
+  const atr = calcularMedia.exponencial(trs, periodo);
+  const plusDI = calcularMedia.exponencial(plusDMs, periodo).map((val, i) => 
+    (val / atr[i]) * 100);
+  const minusDI = calcularMedia.exponencial(minusDMs, periodo).map((val, i) => 
+    (val / atr[i]) * 100);
   
-  const plusDI = (sumPositiveDM / sumTR) * 100;
-  const minusDI = (sumNegativeDM / sumTR) * 100;
-  const dx = (Math.abs(plusDI - minusDI) / (plusDI + minusDI)) * 100;
+  const dxs = plusDI.map((pdi, i) => {
+    const mdi = minusDI[i];
+    return (Math.abs(pdi - mdi) / (pdi + mdi)) * 100;
+  });
   
-  return dx || 0;
+  return calcularMedia.exponencial(dxs, periodo).pop() || 0;
 }
 
 function calcularSuporteResistencia(closes, periodo = 20) {
@@ -393,12 +403,11 @@ function determinarSinal(score, tendencia, atr, adx) {
 async function obterDadosBinance() {
   for (const endpoint of CONFIG.API_ENDPOINTS) {
     try {
-      const response = await fetch(`${endpoint}/klines?symbol=EURUSDT&interval=1m&limit=150`);
+      const response = await fetch(`${endpoint}/klines?symbol=EURUSDT&interval=1m&limit=150&timestamp=${Date.now()}`);
       if (!response.ok) continue;
       const dados = await response.json();
-      if (Array.isArray(dados) && dados.length > 50) {
-        return dados.filter(v => Array.isArray(v) && v.length >= 6);
-      }
+      if (!Array.isArray(dados)) throw new Error("Resposta inválida");
+      return dados.filter(v => v.length >= 6);
     } catch (e) {
       console.error(`Erro no endpoint ${endpoint}:`, e);
     }
@@ -412,6 +421,10 @@ async function analisarMercado() {
 
   try {
     const dados = await obterDadosBinance();
+    if (!dados || dados.length < 50) {
+      throw new Error("Dados insuficientes");
+    }
+    
     const velaAtual = dados[dados.length - 1];
     
     const closes = dados.map(v => parseFloat(v[4]));
@@ -568,7 +581,7 @@ function iniciarAplicativo() {
 
   setInterval(async () => {
     try {
-      const response = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=EURUSDT");
+      const response = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=EURUSDT&timestamp=${Date.now()}`);
       if (!response.ok) return;
       const dados = await response.json();
       const precoElement = document.querySelector("#criterios li:nth-child(5)");
