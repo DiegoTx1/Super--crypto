@@ -1,5 +1,5 @@
 // =============================================
-// CONFIGURAÇÕES GLOBAIS (ATUALIZADAS PARA EUR/USD)
+// CONFIGURAÇÕES GLOBAIS PARA FOREX (EUR/USD)
 // =============================================
 const state = {
   ultimos: [],
@@ -16,12 +16,10 @@ const state = {
 };
 
 const CONFIG = {
-  API_ENDPOINTS: [
-    "https://api.binance.com/api/v3",
-    "https://api1.binance.com/api/v3", 
-    "https://api2.binance.com/api/v3",
-    "https://api3.binance.com/api/v3"
-  ],
+  BROKER_API: "SUA_API_FOREX_AQUI", // Ex: 'https://api-fxtrade.oanda.com/v3'
+  ACCOUNT_ID: "SUA_CONTA_AQUI",
+  ACCESS_TOKEN: "SEU_TOKEN_AQUI",
+  
   PERIODOS: {
     RSI: 14,
     STOCH: 14,
@@ -38,6 +36,7 @@ const CONFIG = {
     ATR: 14,
     ADX: 14
   },
+  
   LIMIARES: {
     SCORE_ALTO: 72,
     SCORE_MEDIO: 62,
@@ -49,9 +48,10 @@ const CONFIG = {
     WILLIAMS_OVERSOLD: -85,
     VOLUME_ALTO: 1.3,
     VARIACAO_LATERAL: 0.8,
-    ATR_MINIMO: 0.0005,
+    ATR_MINIMO: 0.0005, // Ajustado para Forex
     ADX_FORTE: 25
   },
+  
   PESOS: {
     RSI: 1.8,
     MACD: 1.8,
@@ -75,33 +75,12 @@ function formatarTimer(segundos) {
   return `${mins}:${segs.toString().padStart(2, '0')}`;
 }
 
-function atualizarRelogio() {
-  const elementoHora = document.getElementById("hora");
-  if (elementoHora) {
-    elementoHora.textContent = new Date().toLocaleTimeString("pt-BR", {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
-  }
-}
-
 function atualizarInterface(sinal, score) {
-  const comandoElement = document.getElementById("comando");
-  if (comandoElement) {
-    comandoElement.textContent = sinal;
-    comandoElement.className = sinal.toLowerCase().replace(/[^a-z]/g, '');
-  }
-  
-  const scoreElement = document.getElementById("score");
-  if (scoreElement) scoreElement.textContent = `Confiança: ${score}%`;
-  
-  const horaElement = document.getElementById("hora");
-  if (horaElement) horaElement.textContent = state.ultimaAtualizacao;
+  console.log(`Sinal: ${sinal} | Confiança: ${score}% | Atualizado em: ${state.ultimaAtualizacao}`);
 }
 
 // =============================================
-// INDICADORES TÉCNICOS (CORRIGIDOS)
+// INDICADORES TÉCNICOS
 // =============================================
 const calcularMedia = {
   simples: (dados, periodo) => {
@@ -285,11 +264,12 @@ function calcularSuporteResistencia(closes, periodo = 20) {
 }
 
 // =============================================
-// SISTEMA DE DECISÃO (ATUALIZADO)
+// SISTEMA DE DECISÃO
 // =============================================
 function verificarHorarioNegociacao() {
   const horaUTC = new Date().getUTCHours();
-  return (horaUTC >= 8 && horaUTC < 17) || (horaUTC >= 13 && horaUTC < 22);
+  // Horário de maior liquidez no Forex (Londres/NY)
+  return (horaUTC >= 7 && horaUTC < 17); // 8AM-5PM GMT
 }
 
 function avaliarTendencia(closes, ema21, ema50, ema200) {
@@ -348,9 +328,9 @@ function calcularScore(indicadores) {
     score += 10 * CONFIG.PESOS.ATR;
   }
 
-  // Volume
+  // Volume (menos importante no Forex)
   if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO) {
-    score += (indicadores.tendencia.includes("ALTA") ? 8 : -8) * CONFIG.PESOS.VOLUME;
+    score += (indicadores.tendencia.includes("ALTA") ? 5 : -5) * CONFIG.PESOS.VOLUME;
   }
 
   // Estocástico
@@ -398,21 +378,40 @@ function determinarSinal(score, tendencia, atr, adx) {
 }
 
 // =============================================
-// CORE DO SISTEMA (ATUALIZADO)
+// CORE DO SISTEMA (FOREX)
 // =============================================
-async function obterDadosBinance() {
-  for (const endpoint of CONFIG.API_ENDPOINTS) {
-    try {
-      const response = await fetch(`${endpoint}/klines?symbol=EURUSDT&interval=1m&limit=150&timestamp=${Date.now()}`);
-      if (!response.ok) continue;
-      const dados = await response.json();
-      if (!Array.isArray(dados)) throw new Error("Resposta inválida");
-      return dados.filter(v => v.length >= 6);
-    } catch (e) {
-      console.error(`Erro no endpoint ${endpoint}:`, e);
+async function obterDadosForex() {
+  try {
+    // Substitua por chamada real à API do seu broker
+    const response = await fetch(`${CONFIG.BROKER_API}/instruments/EUR_USD/candles?price=M&granularity=M1&count=150`, {
+      headers: {
+        'Authorization': `Bearer ${CONFIG.ACCESS_TOKEN}`,
+        'Accept-Datetime-Format': 'RFC3339'
+      }
+    });
+    
+    if (!response.ok) throw new Error("Erro na API");
+    const dados = await response.json();
+    
+    if (!dados.candles || dados.candles.length < 50) {
+      throw new Error("Dados insuficientes");
     }
+    
+    // Processar candles no formato do broker
+    const processed = dados.candles.map(c => ({
+      time: c.time,
+      open: parseFloat(c.mid.o),
+      high: parseFloat(c.mid.h),
+      low: parseFloat(c.mid.l),
+      close: parseFloat(c.mid.c),
+      volume: parseFloat(c.volume)
+    }));
+    
+    return processed;
+  } catch (e) {
+    console.error("Erro ao obter dados Forex:", e);
+    throw e;
   }
-  throw new Error("Todos os endpoints falharam");
 }
 
 async function analisarMercado() {
@@ -420,17 +419,12 @@ async function analisarMercado() {
   state.leituraEmAndamento = true;
 
   try {
-    const dados = await obterDadosBinance();
-    if (!dados || dados.length < 50) {
-      throw new Error("Dados insuficientes");
-    }
+    const dados = await obterDadosForex();
     
-    const velaAtual = dados[dados.length - 1];
-    
-    const closes = dados.map(v => parseFloat(v[4]));
-    const highs = dados.map(v => parseFloat(v[2]));
-    const lows = dados.map(v => parseFloat(v[3]));
-    const volumes = dados.map(v => parseFloat(v[5]));
+    const closes = dados.map(v => v.close);
+    const highs = dados.map(v => v.high);
+    const lows = dados.map(v => v.low);
+    const volumes = dados.map(v => v.volume);
 
     const ema21 = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_CURTA).pop();
     const ema50 = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_LONGA).pop();
@@ -444,11 +438,11 @@ async function analisarMercado() {
       rsi: calcularRSI(closes),
       macd: calcularMACD(closes),
       ema21, ema50, ema200,
-      volume: parseFloat(velaAtual[5]),
+      volume: dados[dados.length-1].volume,
       volumeMedia: calcularMedia.simples(volumes, CONFIG.PERIODOS.SMA_VOLUME),
       stoch: calcularStochastic(highs, lows, closes),
       williams: calcularWilliams(highs, lows, closes),
-      close: parseFloat(velaAtual[4]),
+      close: dados[dados.length-1].close,
       tendencia: avaliarTendencia(closes, ema21, ema50, ema200),
       atr, adx,
       suporte: sr.suporte,
@@ -466,59 +460,9 @@ async function analisarMercado() {
 
     atualizarInterface(sinal, score);
 
-    const criteriosElement = document.getElementById("criterios");
-    if (criteriosElement) {
-      criteriosElement.innerHTML = `
-        <li>Tendência: <strong>${indicadores.tendencia.replace('_', ' ')}</strong> ${
-          indicadores.tendencia.includes("ALTA") ? '📈' : 
-          indicadores.tendencia.includes("BAIXA") ? '📉' : '➖'
-        } <small>(ADX: ${indicadores.adx.toFixed(2)} ${
-          indicadores.adx > CONFIG.LIMIARES.ADX_FORTE ? '✅' : '⚠️'
-        })</small></li>
-        
-        <li>RSI: <strong>${indicadores.rsi.toFixed(2)}</strong> ${
-          indicadores.rsi < CONFIG.LIMIARES.RSI_OVERSOLD ? '🔻' : 
-          indicadores.rsi > CONFIG.LIMIARES.RSI_OVERBOUGHT ? '🔺' : ''
-        } | Williams: <strong>${indicadores.williams.toFixed(2)}</strong> ${
-          indicadores.williams < CONFIG.LIMIARES.WILLIAMS_OVERSOLD ? '🔻' : 
-          indicadores.williams > CONFIG.LIMIARES.WILLIAMS_OVERBOUGHT ? '🔺' : ''
-        }</li>
-        
-        <li>MACD: <strong>${indicadores.macd.histograma.toFixed(5)}</strong> ${
-          indicadores.macd.histograma > 0 ? '🟢' : '🔴'
-        }</li>
-        
-        <li>Stochastic: K <strong>${indicadores.stoch.k.toFixed(2)}</strong> ${
-          indicadores.stoch.k < CONFIG.LIMIARES.STOCH_OVERSOLD ? '🔻' : 
-          indicadores.stoch.k > CONFIG.LIMIARES.STOCH_OVERBOUGHT ? '🔺' : ''
-        } / D <strong>${indicadores.stoch.d.toFixed(2)}</strong></li>
-        
-        <li>Preço: <strong>$${indicadores.close.toFixed(5)}</strong> (ATR: ${indicadores.atr.toFixed(5)}) ${
-          indicadores.atr > CONFIG.LIMIARES.ATR_MINIMO ? '🌊' : '💤'
-        }</li>
-        
-        <li>Suporte: <strong>${indicadores.suporte.toFixed(5)}</strong> 🛑 | Resistência: <strong>${indicadores.resistencia.toFixed(5)}</strong> 🎯</li>
-        
-        <li>Médias: EMA21 <strong>${indicadores.ema21.toFixed(5)}</strong> ${
-          indicadores.close > indicadores.ema21 ? '🟢' : '🔴'
-        } | EMA50 <strong>${indicadores.ema50.toFixed(5)}</strong> ${
-          indicadores.close > indicadores.ema50 ? '🟢' : '🔴'
-        } | EMA200 <strong>${indicadores.ema200.toFixed(5)}</strong></li>
-        
-        <li>Volume: <strong>${indicadores.volume.toFixed(2)}</strong> vs Média ${indicadores.volumeMedia.toFixed(2)} ${
-          indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO ? '🔊' : '🔉'
-        }</li>
-      `;
-    }
-
     state.ultimos.unshift(`${state.ultimaAtualizacao} - ${sinal} (${score}%)`);
     if (state.ultimos.length > 10) state.ultimos.pop();
     
-    const ultimosElement = document.getElementById("ultimos");
-    if (ultimosElement) {
-      ultimosElement.innerHTML = state.ultimos.map(i => `<li>${i}</li>`).join("");
-    }
-
     state.tentativasErro = 0;
   } catch (e) {
     console.error("Erro na análise:", e);
@@ -526,7 +470,7 @@ async function analisarMercado() {
     
     if (++state.tentativasErro > 3) {
       console.error("Muitos erros consecutivos, reiniciando...");
-      setTimeout(() => location.reload(), 10000);
+      setTimeout(() => process.exit(1), 10000);
     }
   } finally {
     state.leituraEmAndamento = false;
@@ -543,18 +487,8 @@ function sincronizarTimer() {
   const delayProximaVela = 60000 - (agora % 60000);
   state.timer = Math.max(1, Math.floor(delayProximaVela / 1000));
 
-  const elementoTimer = document.getElementById("timer");
-  if (elementoTimer) {
-    elementoTimer.textContent = formatarTimer(state.timer);
-    elementoTimer.style.color = state.timer <= 5 ? 'red' : '';
-  }
-
   state.intervaloAtual = setInterval(() => {
     state.timer--;
-    if (elementoTimer) {
-      elementoTimer.textContent = formatarTimer(state.timer);
-      elementoTimer.style.color = state.timer <= 5 ? 'red' : '';
-    }
     
     if (state.timer <= 0) {
       clearInterval(state.intervaloAtual);
@@ -567,37 +501,10 @@ function sincronizarTimer() {
 // INICIALIZAÇÃO
 // =============================================
 function iniciarAplicativo() {
-  const elementosNecessarios = ['comando', 'score', 'hora', 'timer', 'criterios', 'ultimos'];
-  const elementosFaltantes = elementosNecessarios.filter(id => !document.getElementById(id));
-  
-  if (elementosFaltantes.length > 0) {
-    console.error("Elementos da interface não encontrados:", elementosFaltantes);
-    return;
-  }
-
-  setInterval(atualizarRelogio, 1000);
+  console.log("Iniciando análise técnica para EUR/USD...");
   sincronizarTimer();
   analisarMercado();
-
-  setInterval(async () => {
-    try {
-      const response = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=EURUSDT&timestamp=${Date.now()}`);
-      if (!response.ok) return;
-      const dados = await response.json();
-      const precoElement = document.querySelector("#criterios li:nth-child(5)");
-      if (precoElement && dados.lastPrice) {
-        precoElement.innerHTML = `Preço: <strong>$${parseFloat(dados.lastPrice).toFixed(5)}</strong> (ATR: ${state.atr.toFixed(5)}) ${
-          state.atr > CONFIG.LIMIARES.ATR_MINIMO ? '🌊' : '💤'
-        }`;
-      }
-    } catch (e) {
-      console.error("Erro ao atualizar preço:", e);
-    }
-  }, 5000);
 }
 
-if (document.readyState === 'complete') {
-  iniciarAplicativo();
-} else {
-  document.addEventListener('DOMContentLoaded', iniciarAplicativo);
-}
+// Iniciar o aplicativo
+iniciarAplicativo();
