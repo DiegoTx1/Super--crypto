@@ -1,5 +1,5 @@
 // =============================================
-// CONFIGURAÇÕES GLOBAIS
+// CONFIGURAÇÕES GLOBAIS (REVISADAS PARA EUR/USD)
 // =============================================
 const state = {
   ultimos: [],
@@ -12,14 +12,13 @@ const state = {
   ultimoScore: 0,
   contadorLaterais: 0,
   websocket: null,
-  apiKeys: ["demo"],
+  apiKeys: ["demo"], // Simplificado para usar apenas a chave demo
   currentApiKeyIndex: 0,
-  marketOpen: false,
-  activeMarkets: []
+  marketOpen: true
 };
 
 const CONFIG = {
-  API_ENDPOINTS: ["https://api.twelvedata.com"],
+  API_ENDPOINTS: ["https://api.twelvedata.com"], // Foco em uma API principal
   WS_ENDPOINT: "wss://stream.twelvedata.com/v1/quotes/price",
   PARES: {
     EURUSD: "EUR/USD"
@@ -64,7 +63,7 @@ const CONFIG = {
     CONFIRMACAO: 1.0,
     LATERALIDADE: 1.8,
     VWAP: 1.3,
-    VOLATILIDADE: 1.2
+    VOLATILIDATE: 1.2
   },
   RISCO: {
     MAX_RISCO_POR_OPERACAO: 0.02,
@@ -76,16 +75,12 @@ const CONFIG = {
     LONDON_OPEN: 7,
     LONDON_CLOSE: 16,
     NY_OPEN: 13,
-    NY_CLOSE: 22,
-    TOKYO_OPEN: 0,
-    TOKYO_CLOSE: 9,
-    SYDNEY_OPEN: 22,
-    SYDNEY_CLOSE: 7
+    NY_CLOSE: 22
   }
 };
 
 // =============================================
-// FUNÇÕES UTILITÁRIAS
+// FUNÇÕES UTILITÁRIAS (CORRIGIDAS)
 // =============================================
 function formatarTimer(segundos) {
   return `0:${segundos.toString().padStart(2, '0')}`;
@@ -93,72 +88,22 @@ function formatarTimer(segundos) {
 
 function atualizarRelogio() {
   const elementoHora = document.getElementById("hora");
-  const elementoMercados = document.getElementById("info-mercado");
-  
-  if (elementoHora && elementoMercados) {
+  if (elementoHora) {
     const now = new Date();
-    const gmtHours = now.getUTCHours();
-    
     elementoHora.textContent = now.toLocaleTimeString("pt-BR", {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit'
     });
     
-    state.activeMarkets = [];
-    
-    // Verifica mercados abertos
-    if ((gmtHours >= CONFIG.MARKET_HOURS.SYDNEY_OPEN && gmtHours <= 23) || 
-        (gmtHours >= 0 && gmtHours < CONFIG.MARKET_HOURS.SYDNEY_CLOSE)) {
-      state.activeMarkets.push("Sydney");
-    }
-    
-    if (gmtHours >= CONFIG.MARKET_HOURS.TOKYO_OPEN && gmtHours < CONFIG.MARKET_HOURS.TOKYO_CLOSE) {
-      state.activeMarkets.push("Tóquio");
-    }
-    
-    if (gmtHours >= CONFIG.MARKET_HOURS.LONDON_OPEN && gmtHours < CONFIG.MARKET_HOURS.LONDON_CLOSE) {
-      state.activeMarkets.push("Londres");
-    }
-    
-    if (gmtHours >= CONFIG.MARKET_HOURS.NY_OPEN && gmtHours < CONFIG.MARKET_HOURS.NY_CLOSE) {
-      state.activeMarkets.push("Nova York");
-    }
-    
-    state.marketOpen = (gmtHours >= CONFIG.MARKET_HOURS.LONDON_OPEN && gmtHours < CONFIG.MARKET_HOURS.LONDON_CLOSE) ||
-                      (gmtHours >= CONFIG.MARKET_HOURS.NY_OPEN && gmtHours < CONFIG.MARKET_HOURS.NY_CLOSE);
-    
-    // Atualiza display do mercado
-    if (state.activeMarkets.length > 0) {
-      elementoMercados.innerHTML = `
-        <div class="market-status ${state.marketOpen ? 'open' : 'closed'}">
-          ${state.marketOpen ? 'MERCADO ABERTO' : 'MERCADO FECHADO'}
-        </div>
-        <div class="market-hours">
-          Mercados ativos: ${state.activeMarkets.join(", ")}
-        </div>
-        <div class="market-schedule">
-          Londres: ${CONFIG.MARKET_HOURS.LONDON_OPEN}:00-${CONFIG.MARKET_HOURS.LONDON_CLOSE}:00 GMT | 
-          NY: ${CONFIG.MARKET_HOURS.NY_OPEN}:00-${CONFIG.MARKET_HOURS.NY_CLOSE}:00 GMT
-        </div>
-      `;
-    } else {
-      elementoMercados.innerHTML = `
-        <div class="market-status closed">
-          MERCADO FECHADO
-        </div>
-        <div class="market-schedule">
-          Próxima abertura: Sydney ${CONFIG.MARKET_HOURS.SYDNEY_OPEN}:00 GMT
-        </div>
-      `;
-    }
+    const gmtHours = now.getUTCHours();
+    const isLondonOpen = gmtHours >= CONFIG.MARKET_HOURS.LONDON_OPEN && gmtHours < CONFIG.MARKET_HOURS.LONDON_CLOSE;
+    const isNYOpen = gmtHours >= CONFIG.MARKET_HOURS.NY_OPEN && gmtHours < CONFIG.MARKET_HOURS.NY_CLOSE;
+    state.marketOpen = isLondonOpen || isNYOpen;
     
     if (!state.marketOpen) {
-      const comando = document.getElementById("comando");
-      if (comando) {
-        comando.textContent = "MERCADO FECHADO";
-        comando.className = "esperar";
-      }
+      document.getElementById("comando").textContent = "MERCADO FECHADO";
+      document.getElementById("comando").className = "esperar";
     }
   }
 }
@@ -184,8 +129,7 @@ function atualizarInterface(sinal, score) {
     else scoreElement.style.color = '#ff0000';
   }
   
-  const horaElement = document.getElementById("hora");
-  if (horaElement) horaElement.textContent = state.ultimaAtualizacao;
+  document.getElementById("hora").textContent = state.ultimaAtualizacao;
 }
 
 function rotacionarApiKey() {
@@ -194,7 +138,7 @@ function rotacionarApiKey() {
 }
 
 // =============================================
-// INDICADORES TÉCNICOS
+// INDICADORES TÉCNICOS (CORRIGIDOS)
 // =============================================
 const calcularMedia = {
   simples: (dados, periodo) => {
@@ -231,7 +175,7 @@ function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {
   }
 
   let avgGain = gains / periodo;
-  let avgLoss = Math.max(losses / periodo, 0.000001);
+  let avgLoss = Math.max(losses / periodo, 0.000001); // Evitar divisão por zero
 
   for (let i = periodo + 1; i < closes.length; i++) {
     const diff = closes[i] - closes[i - 1];
@@ -242,7 +186,7 @@ function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {
     avgLoss = (avgLoss * (periodo - 1) + loss) / periodo;
   }
 
-  const rs = avgGain / avgLoss;
+  const rs = avgGain / Math.max(avgLoss, 0.000001); // Nova proteção
   return 100 - (100 / (1 + rs));
 }
 
@@ -260,7 +204,9 @@ function calcularStochastic(highs, lows, closes, periodo = CONFIG.PERIODOS.STOCH
       kValues.push(range > 0 ? ((closes[i] - lowestLow) / range) * 100 : 50);
     }
     
-    const dValues = kValues.length >= 3 ? calcularMedia.simples(kValues.slice(-3), 3) : 50;
+    const dValues = kValues.length >= 3 ? 
+      calcularMedia.simples(kValues.slice(-3), 3) : 
+      50;
     
     return {
       k: kValues[kValues.length-1] || 50,
@@ -366,7 +312,7 @@ function calcularATR(dados, periodo = CONFIG.PERIODOS.ATR) {
 }
 
 // =============================================
-// SISTEMA DE DECISÃO
+// SISTEMA DE DECISÃO (CORRIGIDO)
 // =============================================
 function avaliarTendencia(closes, emaCurta, emaLonga, ema200) {
   if (!Array.isArray(closes) || closes.length < CONFIG.PERIODOS.VELAS_CONFIRMACAO) return "NEUTRA";
@@ -419,6 +365,7 @@ function detectarMercadoLateral(closes) {
 function calcularScore(indicadores) {
   let score = 50;
 
+  // Análise de RSI
   if (indicadores.rsi < CONFIG.LIMIARES.RSI_OVERSOLD) {
     score += 25 * CONFIG.PESOS.RSI;
     if (indicadores.tendencia.includes("BAIXA")) score -= 10;
@@ -430,8 +377,10 @@ function calcularScore(indicadores) {
   else if (indicadores.rsi < 45) score += 10 * CONFIG.PESOS.RSI;
   else if (indicadores.rsi > 55) score -= 10 * CONFIG.PESOS.RSI;
 
+  // Análise MACD
   score += (Math.min(Math.max(indicadores.macd.histograma * 10, -15), 15) * CONFIG.PESOS.MACD);
 
+  // Análise de Tendência
   switch(indicadores.tendencia) {
     case "FORTE_ALTA": 
       score += 20 * CONFIG.PESOS.TENDENCIA; 
@@ -448,10 +397,12 @@ function calcularScore(indicadores) {
       break;
   }
 
+  // Análise de Volume
   if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO) {
     score += (indicadores.tendencia.includes("ALTA") ? 8 : -8) * CONFIG.PESOS.VOLUME;
   }
 
+  // Análise Stochastic
   if (indicadores.stoch.k < CONFIG.LIMIARES.STOCH_OVERSOLD && 
       indicadores.stoch.d < CONFIG.LIMIARES.STOCH_OVERSOLD) {
     score += 12 * CONFIG.PESOS.STOCH;
@@ -463,6 +414,7 @@ function calcularScore(indicadores) {
     if (indicadores.tendencia.includes("BAIXA")) score += 5;
   }
 
+  // Análise Williams
   if (indicadores.williams < CONFIG.LIMIARES.WILLIAMS_OVERSOLD) {
     score += 10 * CONFIG.PESOS.WILLIAMS; 
     if (indicadores.rsi < 40) score += 3;
@@ -472,15 +424,18 @@ function calcularScore(indicadores) {
     if (indicadores.rsi > 60) score -= 3;
   }
 
+  // Análise VWAP
   const vwapDesvio = Math.abs(indicadores.close - indicadores.vwap) / Math.max(indicadores.vwap, 0.000001);
   if (vwapDesvio > CONFIG.LIMIARES.VWAP_DESVIO) {
     score += (indicadores.close > indicadores.vwap ? 8 : -8) * CONFIG.PESOS.VWAP;
   }
 
+  // Análise de Volatilidade (ATR)
   if (indicadores.atr > CONFIG.LIMIARES.ATR_LIMIAR) {
     score += 5 * CONFIG.PESOS.VOLATILIDADE;
   }
 
+  // Confirmações
   const confirmacoes = [
     indicadores.rsi < 40 || indicadores.rsi > 60,
     Math.abs(indicadores.macd.histograma) > 0.05,
@@ -514,31 +469,33 @@ function determinarSinal(score, tendencia) {
 }
 
 // =============================================
-// CORE DO SISTEMA
+// CORE DO SISTEMA (CORRIGIDO)
 // =============================================
 async function obterDadosForex() {
   for (const endpoint of CONFIG.API_ENDPOINTS) {
     try {
-      const apiKey = rotacionarApiKey();
-      const response = await fetch(`${endpoint}/time_series?symbol=${CONFIG.PARES.EURUSD}&interval=1min&outputsize=150&apikey=${apiKey}`);
-      if (!response.ok) continue;
-      
-      const dados = await response.json();
-      if (dados.values && Array.isArray(dados.values)) {
-        return dados.values.map(v => ({
-          time: v.datetime,
-          open: parseFloat(v.open) || 0,
-          high: parseFloat(v.high) || 0,
-          low: parseFloat(v.low) || 0,
-          close: parseFloat(v.close) || 0,
-          volume: parseFloat(v.volume) || 0
-        })).reverse();
+      let response, dados;
+      if (endpoint.includes('twelvedata')) {
+        const apiKey = rotacionarApiKey();
+        response = await fetch(`${endpoint}/time_series?symbol=${CONFIG.PARES.EURUSD}&interval=1min&outputsize=150&apikey=${apiKey}`);
+        if (!response.ok) continue;
+        dados = await response.json();
+        if (dados.values && Array.isArray(dados.values)) {
+          return dados.values.map(v => ({
+            time: v.datetime,
+            open: parseFloat(v.open) || 0,
+            high: parseFloat(v.high) || 0,
+            low: parseFloat(v.low) || 0,
+            close: parseFloat(v.close) || 0,
+            volume: parseFloat(v.volume) || 0
+          })).reverse();
+        }
       }
     } catch (e) {
-      console.error(`Erro no endpoint:`, e);
+      console.error(`Erro no endpoint ${endpoint}:`, e);
     }
   }
-  throw new Error("Falha ao obter dados");
+  throw new Error("Todos os endpoints falharam");
 }
 
 async function analisarMercado() {
@@ -557,11 +514,11 @@ async function analisarMercado() {
 
     const emaCurtaArray = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_CURTA);
     const emaLongaArray = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_LONGA);
-    const ema200Array = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_200);
+    const ema200Array  = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_200);
     
     const emaCurta = emaCurtaArray[emaCurtaArray.length - 1] || 0;
     const emaLonga = emaLongaArray[emaLongaArray.length - 1] || 0;
-    const ema200 = ema200Array[ema200Array.length - 1] || 0;
+    const ema200   = ema200Array[ema200Array.length - 1] || 0;
 
     const indicadores = {
       rsi: calcularRSI(closes),
@@ -610,25 +567,22 @@ async function analisarMercado() {
     }
 
     state.ultimos.unshift(`${state.ultimaAtualizacao} - ${sinal} (${score}%) ${sinal==="CALL"?"📈":sinal==="PUT"?"📉":"✋"}`);
-    if (state.ultimos.length > 10) state.ultimos.pop();
-    
+    if (state.ultimos.length>10) state.ultimos.pop();
     const ultimosElement = document.getElementById("ultimos");
-    if (ultimosElement) {
-      ultimosElement.innerHTML = state.ultimos.map(i => `<li>${i}</li>`).join("");
-    }
+    if (ultimosElement) ultimosElement.innerHTML = state.ultimos.map(i=>`<li>${i}</li>`).join("");
 
     state.tentativasErro = 0;
   } catch (e) {
     console.error("Erro na análise:", e);
     atualizarInterface("ERRO", 0);
-    if (++state.tentativasErro > 3) setTimeout(() => location.reload(), 10000);
+    if (++state.tentativasErro>3) setTimeout(()=>location.reload(),10000);
   } finally {
     state.leituraEmAndamento = false;
   }
 }
 
 // =============================================
-// CONTROLE DE TEMPO
+// CONTROLE DE TEMPO (CORRIGIDO)
 // =============================================
 function sincronizarTimer() {
   clearInterval(state.intervaloAtual);
@@ -640,89 +594,37 @@ function sincronizarTimer() {
   const elementoTimer = document.getElementById("timer");
   if (elementoTimer) {
     elementoTimer.textContent = formatarTimer(state.timer);
-    elementoTimer.style.color = state.timer <= 5 ? 'red' : '';
+    elementoTimer.style.color = state.timer<=5?'red':'';
   }
   
-  state.intervaloAtual = setInterval(() => {
+  state.intervaloAtual = setInterval(()=>{
     state.timer--;
-    
     if (elementoTimer) {
       elementoTimer.textContent = formatarTimer(state.timer);
-      elementoTimer.style.color = state.timer <= 5 ? 'red' : '';
+      elementoTimer.style.color = state.timer<=5?'red':'';
     }
-    
-    if (state.timer <= 0) {
+    if (state.timer<=0) {
       clearInterval(state.intervaloAtual);
       analisarMercado().finally(sincronizarTimer);
     }
-  }, 1000);
+  },1000);
 }
 
 // =============================================
-// INICIALIZAÇÃO
+// INICIALIZAÇÃO (CORRIGIDA)
 // =============================================
 function iniciarAplicativo() {
-  const elementosNecessarios = [
-    'comando', 'score', 'hora', 'timer',
-    'criterios', 'ultimos', 'info-mercado'
-  ];
-  
-  const faltando = elementosNecessarios.filter(id => !document.getElementById(id));
-  
-  if (faltando.length > 0) {
-    console.error("Elementos faltando:", faltando);
+  const ids=['comando','score','hora','timer','criterios','ultimos'];
+  const falt = ids.filter(id=>!document.getElementById(id));
+  if (falt.length>0) {
+    console.error("Elementos faltando:", falt);
     return;
   }
   
-  // Adiciona estilos para a informação de mercado
-  const style = document.createElement('style');
-  style.textContent = `
-    #info-mercado {
-      margin: 10px 0;
-      padding: 10px;
-      border-radius: 5px;
-      background: #2a2e35;
-      color: white;
-      font-family: Arial, sans-serif;
-    }
-    .market-status {
-      font-weight: bold;
-      margin-bottom: 5px;
-      padding: 5px;
-      border-radius: 3px;
-      text-align: center;
-      font-size: 1.1em;
-    }
-    .market-status.open {
-      background: #4CAF50;
-      color: white;
-    }
-    .market-status.closed {
-      background: #F44336;
-      color: white;
-    }
-    .market-hours {
-      font-size: 0.9em;
-      margin: 5px 0;
-      color: #ddd;
-    }
-    .market-schedule {
-      font-size: 0.8em;
-      color: #bbb;
-      line-height: 1.4;
-    }
-  `;
-  document.head.appendChild(style);
-  
-  // Inicia os intervalos
   setInterval(atualizarRelogio, 1000);
   sincronizarTimer();
   analisarMercado();
 }
 
-// Inicia o aplicativo quando o DOM estiver pronto
-if (document.readyState === "complete") {
-  iniciarAplicativo();
-} else {
-  document.addEventListener("DOMContentLoaded", iniciarAplicativo);
-}
+if(document.readyState==="complete") iniciarAplicativo();
+else document.addEventListener("DOMContentLoaded", iniciarAplicativo);
