@@ -64,7 +64,7 @@ const CONFIG = {
     CONFIRMACAO: 1.0,
     LATERALIDADE: 1.8,
     VWAP: 1.3,
-    VOLATILIDATE: 1.2
+    VOLATILIDADE: 1.2
   },
   RISCO: {
     MAX_RISCO_POR_OPERACAO: 0.02,
@@ -81,7 +81,7 @@ const CONFIG = {
 };
 
 // =============================================
-// FUNÇÕES UTILITÁRIAS (INALTERADAS)
+// FUNÇÕES UTILITÁRIAS
 // =============================================
 function formatarTimer(segundos) {
   return `0:${segundos.toString().padStart(2, '0')}`;
@@ -139,7 +139,7 @@ function rotacionarApiKey() {
 }
 
 // =============================================
-// INDICADORES TÉCNICOS (COM EMA ATUALIZADA)
+// INDICADORES TÉCNICOS (CORRIGIDOS)
 // =============================================
 const calcularMedia = {
   simples: (dados, periodo) => {
@@ -153,8 +153,9 @@ const calcularMedia = {
     
     const k = 2 / (periodo + 1);
     
-    if (previousEMA !== null && dados.length === 1) {
-      return dados[0] * k + previousEMA * (1 - k);
+    if (previousEMA !== null) {
+      if (dados.length === 0) return previousEMA;
+      return dados[dados.length - 1] * k + previousEMA * (1 - k);
     }
     
     if (dados.length < periodo) return null;
@@ -168,7 +169,7 @@ const calcularMedia = {
   },
 
   volumeNormalizado: (volumes) => {
-    if (!volumes.length) return 1;
+    if (!volumes.length) return [1];
     const avg = calcularMedia.simples(volumes, volumes.length);
     return volumes.map(v => v / avg);
   }
@@ -254,16 +255,33 @@ function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA,
       return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
     }
 
-    const emaRapida = calcularMedia.exponencial(closes, rapida);
-    const emaLenta = calcularMedia.exponencial(closes, lenta);
+    // Calcular EMAs rápidas e lentas
+    const emaRapida = [];
+    const emaLenta = [];
     
-    if (!emaRapida || !emaLenta) {
-      return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
+    for (let i = rapida; i <= closes.length; i++) {
+      emaRapida.push(calcularMedia.exponencial(closes.slice(0, i), rapida));
     }
     
+    for (let i = lenta; i <= closes.length; i++) {
+      emaLenta.push(calcularMedia.exponencial(closes.slice(0, i), lenta));
+    }
+    
+    // Calcular linha MACD (diferença entre EMAs)
+    const macdLinha = [];
     const startIdx = lenta - rapida;
-    const macdLinha = emaRapida.slice(startIdx).map((val, idx) => val - emaLenta[idx]);
-    const sinalLinha = calcularMedia.exponencial(macdLinha, sinal);
+    
+    for (let i = 0; i < emaRapida.length; i++) {
+      if (i >= startIdx) {
+        macdLinha.push(emaRapida[i] - emaLenta[i-startIdx]);
+      }
+    }
+    
+    // Calcular linha de sinal (EMA da linha MACD)
+    const sinalLinha = [];
+    for (let i = sinal; i <= macdLinha.length; i++) {
+      sinalLinha.push(calcularMedia.exponencial(macdLinha.slice(0, i), sinal));
+    }
     
     const ultimoMACD = macdLinha[macdLinha.length - 1] || 0;
     const ultimoSinal = sinalLinha[sinalLinha.length - 1] || 0;
@@ -323,7 +341,7 @@ function calcularATR(dados, periodo = CONFIG.PERIODOS.ATR) {
 }
 
 // =============================================
-// SISTEMA DE DECISÃO (ATUALIZADO)
+// SISTEMA DE DECISÃO
 // =============================================
 function avaliarTendencia(closes, emaCurta, emaLonga, ema200) {
   if (!Array.isArray(closes) || closes.length < CONFIG.PERIODOS.VELAS_CONFIRMACAO) return "NEUTRA";
@@ -344,7 +362,7 @@ function avaliarTendencia(closes, emaCurta, emaLonga, ema200) {
   }
   
   const diffEMAs = emaCurta - emaLonga;
-  const threshold = 0.0003; // Limiar mais apertado para EMAs 8/34
+  const threshold = 0.0003;
   
   if (ultimoClose > emaCurta && diffEMAs > threshold && ultimoClose > penultimoClose) {
     return "FORTE_ALTA";
@@ -480,7 +498,7 @@ function determinarSinal(score, tendencia) {
 }
 
 // =============================================
-// CORE DO SISTEMA (COM NOVA API)
+// CORE DO SISTEMA
 // =============================================
 async function obterDadosForex() {
   try {
@@ -496,7 +514,7 @@ async function obterDadosForex() {
     const dados = [];
     let lastRate = currentRate;
     
-    for (let i = 0; i < 150; i++) {
+    for (let i = 0; i < 300; i++) {
       const time = new Date(now.getTime() - i * 60000);
       const variation = Math.sin(i/8) * 0.0012;
       const spread = 0.00015;
@@ -554,7 +572,7 @@ async function analisarMercado() {
       emaLonga: ema34,
       ema200,
       volume: volumesNorm[volumesNorm.length - 1] || 1,
-      volumeMedia: 1, // Já normalizado
+      volumeMedia: 1,
       stoch: calcularStochastic(highs, lows, closes),
       williams: calcularWilliams(highs, lows, closes),
       vwap: calcularVWAP(dados),
@@ -608,7 +626,7 @@ async function analisarMercado() {
 }
 
 // =============================================
-// CONTROLE DE TEMPO (INALTERADO)
+// CONTROLE DE TEMPO
 // =============================================
 function sincronizarTimer() {
   clearInterval(state.intervaloAtual);
@@ -637,7 +655,7 @@ function sincronizarTimer() {
 }
 
 // =============================================
-// INICIALIZAÇÃO (INALTERADA)
+// INICIALIZAÇÃO
 // =============================================
 function iniciarAplicativo() {
   const ids=['comando','score','hora','timer','criterios','ultimos'];
