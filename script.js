@@ -1,5 +1,5 @@
 // =============================================
-// CONFIGURAÇÕES GLOBAIS (ATUALIZADAS 2025)
+// CONFIGURAÇÕES GLOBAIS (ATUALIZADO 2024)
 // =============================================
 const state = {
   ultimos: [],
@@ -12,18 +12,18 @@ const state = {
   ultimoScore: 0,
   contadorLaterais: 0,
   websocket: null,
-  apiKeys: ["public"],
+  apiKeys: ["9cf795b2a4f14d43a049ca935d174ebb"], // SUA CHAVE AQUI
   currentApiKeyIndex: 0,
   marketOpen: true,
   lastEMAs: { curta: null, longa: null, _200: null }
 };
 
 const CONFIG = {
-  API_ENDPOINTS: ["https://api.frankfurter.app/latest?from=EUR"],
-  WS_ENDPOINT: null,
-  PARES: {
-    EURUSD: "EUR/USD"
-  },
+  API_ENDPOINTS: [
+    "https://api.twelvedata.com/time_series?symbol=EUR/USD&interval=1min&apikey=9cf795b2a4f14d43a049ca935d174ebb", // Dados históricos
+    "wss://ws.twelvedata.com/v1/quotes?apikey=9cf795b2a4f14d43a049ca935d174ebb&symbol=EUR/USD" // WebSocket (tempo real)
+  ],
+  PARES: { EURUSD: "EUR/USD" },
   PERIODOS: {
     RSI: 14,
     STOCH: 14,
@@ -139,7 +139,7 @@ function rotacionarApiKey() {
 }
 
 // =============================================
-// INDICADORES TÉCNICOS (CORRIGIDOS)
+// INDICADORES TÉCNICOS (OTIMIZADOS)
 // =============================================
 const calcularMedia = {
   simples: (dados, periodo) => {
@@ -341,7 +341,7 @@ function calcularATR(dados, periodo = CONFIG.PERIODOS.ATR) {
 }
 
 // =============================================
-// SISTEMA DE DECISÃO
+// SISTEMA DE DECISÃO (ATUALIZADO)
 // =============================================
 function avaliarTendencia(closes, emaCurta, emaLonga, ema200) {
   if (!Array.isArray(closes) || closes.length < CONFIG.PERIODOS.VELAS_CONFIRMACAO) return "NEUTRA";
@@ -498,47 +498,51 @@ function determinarSinal(score, tendencia) {
 }
 
 // =============================================
-// CORE DO SISTEMA
+// CORE DO SISTEMA (INTEGRAÇÃO COM API TWELVE DATA)
 // =============================================
 async function obterDadosForex() {
   try {
-    // Obter cotação atual
     const response = await fetch(CONFIG.API_ENDPOINTS[0]);
     if (!response.ok) throw new Error("Erro na API");
     
     const data = await response.json();
-    const currentRate = data.rates.USD;
+    if (data.status === "error") throw new Error(data.message);
     
-    // Gerar dados históricos simulados consistentes
-    const now = new Date();
-    const dados = [];
-    let lastRate = currentRate;
+    // Formata os dados para candles
+    const candles = data.values.map(item => ({
+      time: item.datetime,
+      open: parseFloat(item.open),
+      high: parseFloat(item.high),
+      low: parseFloat(item.low),
+      close: parseFloat(item.close),
+      volume: parseFloat(item.volume || 0)
+    }));
     
-    for (let i = 0; i < 300; i++) {
-      const time = new Date(now.getTime() - i * 60000);
-      const variation = Math.sin(i/8) * 0.0012;
-      const spread = 0.00015;
-      
-      const newRate = lastRate * (1 + (Math.random() > 0.5 ? variation : -variation));
-      
-      dados.unshift({
-        time: time.toISOString(),
-        open: newRate,
-        high: newRate + spread,
-        low: newRate - spread,
-        close: newRate,
-        volume: 8000 + Math.random() * 4000
-      });
-      
-      lastRate = newRate;
-    }
-    
-    return dados;
+    return candles;
 
   } catch (e) {
     console.error("Erro ao obter dados:", e);
     throw e;
   }
+}
+
+function conectarWebSocket() {
+  if (state.websocket) state.websocket.close();
+  
+  state.websocket = new WebSocket(CONFIG.API_ENDPOINTS[1]);
+  
+  state.websocket.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.event === "price") {
+      console.log("Preço em tempo real:", data.price);
+      // Atualiza a análise com o último preço
+      atualizarInterface("ATUALIZANDO...", state.ultimoScore);
+    }
+  };
+  
+  state.websocket.onerror = (error) => {
+    console.error("Erro no WebSocket:", error);
+  };
 }
 
 async function analisarMercado() {
@@ -667,6 +671,7 @@ function iniciarAplicativo() {
   
   setInterval(atualizarRelogio, 1000);
   sincronizarTimer();
+  conectarWebSocket(); // Inicia WebSocket para dados em tempo real
   analisarMercado();
 }
 
