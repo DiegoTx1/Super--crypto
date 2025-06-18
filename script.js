@@ -12,7 +12,7 @@ const state = {
   ultimoScore: 0,
   contadorLaterais: 0,
   websocket: null,
-  apiKeys: ["9cf795b2a4f14d43a049ca935d174ebb"], // SUA CHAVE AQUI
+  apiKeys: ["d19ah91r01qkcat733q0d19ah91r01qkcat733qg"], // NOVA CHAVE AQUI
   currentApiKeyIndex: 0,
   marketOpen: true,
   lastEMAs: { curta: null, longa: null, _200: null }
@@ -20,8 +20,8 @@ const state = {
 
 const CONFIG = {
   API_ENDPOINTS: [
-    "https://api.twelvedata.com/time_series?symbol=EUR/USD&interval=1min&apikey=9cf795b2a4f14d43a049ca935d174ebb", // Dados históricos
-    "wss://ws.twelvedata.com/v1/quotes?apikey=9cf795b2a4f14d43a049ca935d174ebb&symbol=EUR/USD" // WebSocket (tempo real)
+    "https://api.twelvedata.com/time_series?symbol=EUR/USD&interval=1min&apikey=d19ah91r01qkcat733q0d19ah91r01qkcat733qg", // Dados históricos
+    "wss://ws.twelvedata.com/v1/quotes?apikey=d19ah91r01qkcat733q0d19ah91r01qkcat733qg&symbol=EUR/USD" // WebSocket (tempo real)
   ],
   PARES: { EURUSD: "EUR/USD" },
   PERIODOS: {
