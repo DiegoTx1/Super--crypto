@@ -33,7 +33,7 @@ const CONFIG = {
     EMA_200: 200,
     SMA_VOLUME: 20,
     MACD_RAPIDA: 12,
-    MACD_LENTA: 26,
+    MACD_LONGA: 26,
     MACD_SINAL: 9,
     VELAS_CONFIRMACAO: 3,
     ANALISE_LATERAL: 30,
@@ -55,24 +55,24 @@ const CONFIG = {
     WILLIAMS_OVERBOUGHT: -15,
     WILLIAMS_OVERSOLD: -85,
     VOLUME_ALTO: 1.5,
-    VARIACAO_LATERAL: 2.5,  // Aumentado para cripto
+    VARIACAO_LATERAL: 2.5,
     VWAP_DESVIO: 0.003,
     ATR_LIMIAR: 0.0050,
-    MIN_INCLINACAO_EMA: 0.5  // Novo parâmetro
+    MIN_INCLINACAO_EMA: 0.5
   },
   PESOS: {
     RSI: 1.5,
     MACD: 2.0,
-    TENDENCIA: 2.5,  // Aumentado
+    TENDENCIA: 2.5,
     VOLUME: 1.2,
     STOCH: 1.0,
     WILLIAMS: 1.0,
     CONFIRMACAO: 1.0,
-    LATERALIDADE: 1.0,  // Reduzido
+    LATERALIDADE: 1.0,
     VWAP: 1.2,
     VOLATILIDADE: 1.5,
-    SUPERTREND: 2.5,  // Aumentado
-    ICHIMOKU: 2.0  // Aumentado
+    SUPERTREND: 2.5,
+    ICHIMOKU: 2.0
   },
   RISCO: {
     MAX_RISCO_POR_OPERACAO: 0.01,
@@ -230,7 +230,7 @@ function calcularWilliams(highs, lows, closes, periodo = CONFIG.PERIODOS.WILLIAM
 }
 
 function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA, 
-                    lenta = CONFIG.PERIODOS.MACD_LENTA, 
+                    lenta = CONFIG.PERIODOS.MACD_LONGA, 
                     sinal = CONFIG.PERIODOS.MACD_SINAL) {
   try {
     if (!Array.isArray(closes) || closes.length < lenta + sinal) {
@@ -429,30 +429,41 @@ function detectarMercadoLateral(closes) {
 function avaliarTendencia(closes, emaCurta, emaLonga, ema200, supertrend, ichimoku) {
   if (!Array.isArray(closes) || closes.length < CONFIG.PERIODOS.VELAS_CONFIRMACAO) return "NEUTRA";
   
-  // Primeiro verificar os indicadores de tendência mais fortes
-  const volumeAtual = closes[closes.length - 1].volume;
-  const volumeMedio = calcularMedia.simples(closes.map(c => c.volume), 20);
-  const volumeAlto = volumeAtual > volumeMedio * CONFIG.LIMIARES.VOLUME_ALTO;
-  
-  if (supertrend.direcao === 'up' && ichimoku && ichimoku.acimaDaNuvem && volumeAlto) {
-    return "FORTE_ALTA";
+  // 1. Verificar primeiro os indicadores de tendência forte
+  if (supertrend.direcao === 'down') {
+    if (ichimoku && ichimoku.abaixoDaNuvem) {
+      return "FORTE_BAIXA";
+    }
+    return "BAIXA";
   }
   
-  if (supertrend.direcao === 'down' && ichimoku && ichimoku.abaixoDaNuvem && volumeAlto) {
-    return "FORTE_BAIXA";
+  if (supertrend.direcao === 'up') {
+    if (ichimoku && ichimoku.acimaDaNuvem) {
+      return "FORTE_ALTA";
+    }
+    return "ALTA";
   }
-  
-  // Só então verificar lateralidade
+
+  // 2. Só então verificar lateralidade
   if (detectarMercadoLateral(closes)) {
+    // Verificar se não há sinais contrários fortes
+    const rsi = calcularRSI(closes);
+    const williams = calcularWilliams(closes.map(c => c.high), closes.map(c => c.low), closes);
+    
+    // Se houver sinais fortes de sobrevenda, não considerar lateral
+    if (rsi < CONFIG.LIMIARES.RSI_OVERSOLD || williams < CONFIG.LIMIARES.WILLIAMS_OVERSOLD) {
+      return "BAIXA";
+    }
+    
     state.contadorLaterais++;
     return "LATERAL";
   }
   
   state.contadorLaterais = 0;
   
+  // 3. Tendência por EMAs e preço
   const ultimoClose = closes[closes.length - 1];
   const penultimoClose = closes[closes.length - 2];
-  
   const diffEMAs = emaCurta - emaLonga;
   const threshold = 0.005;
   
@@ -480,7 +491,7 @@ function calcularScore(indicadores) {
   else if (indicadores.rsi < 40) score += 10 * CONFIG.PESOS.RSI;
   else if (indicadores.rsi > 60) score -= 10 * CONFIG.PESOS.RSI;
 
-  score += (Math.min(Math.max(indicadores.macd.histograma * 100, -15), 15) * CONFIG.PESOS.MACD);
+  score += (Math.min(Math.max(indicadores.macd.histograma * 100, -15), 15) * CONFIG.PESOS.MACD;
 
   switch(indicadores.tendencia) {
     case "FORTE_ALTA": 
@@ -651,8 +662,8 @@ async function analisarMercado() {
       emaCurta,
       emaLonga,
       ema200,
-      volume: velaAtual.volume,
-      volumeMedia: calcularMedia.simples(volumes, CONFIG.PERIODOS.SMA_VOLUME) || 1,
+      volume: velaAtual.volume > 0 ? velaAtual.volume : 0.001, // Correção para volume zerado
+      volumeMedia: Math.max(calcularMedia.simples(volumes, CONFIG.PERIODOS.SMA_VOLUME), 0.001) || 0.001,
       stoch: calcularStochastic(highs, lows, closes),
       williams: calcularWilliams(highs, lows, closes),
       vwap: calcularVWAP(dados),
