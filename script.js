@@ -12,14 +12,14 @@ const state = {
   ultimoScore: 0,
   contadorLaterais: 0,
   websocket: null,
-  apiKeys: ["demo"], // Simplificado para usar apenas a chave demo
+  apiKeys: ["demo"],
   currentApiKeyIndex: 0,
-  marketOpen: true // Mercado de cripto opera 24/7
+  marketOpen: true
 };
 
 const CONFIG = {
-  API_ENDPOINTS: ["https://api.twelvedata.com", "https://api.binance.com"], // Binance adicionado
-  WS_ENDPOINT: "wss://stream.binance.com:9443/ws", // WebSocket da Binance
+  API_ENDPOINTS: ["https://api.twelvedata.com", "https://api.binance.com"],
+  WS_ENDPOINT: "wss://stream.binance.com:9443/ws",
   PARES: {
     BTCUSDT: "BTC/USDT",
     ETHUSDT: "ETH/USDT"
@@ -39,45 +39,46 @@ const CONFIG = {
     ANALISE_LATERAL: 30,
     VWAP: 20,
     ATR: 14,
-    SUPERTREND: 10, // Novo indicador para cripto
-    SUPERTREND_MULTIPLIER: 3, // Multiplicador para Supertrend
-    ICHIMOKU_TENKAN: 9, // Período Tenkan-sen
-    ICHIMOKU_KIJUN: 26, // Período Kijun-sen
-    ICHIMOKU_SENKOU: 52 // Período Senkou Span
+    SUPERTREND: 10,
+    SUPERTREND_MULTIPLIER: 3,
+    ICHIMOKU_TENKAN: 9,
+    ICHIMOKU_KIJUN: 26,
+    ICHIMOKU_SENKOU: 52
   },
   LIMIARES: {
-    SCORE_ALTO: 80, // Aumentado para cripto
+    SCORE_ALTO: 80,
     SCORE_MEDIO: 65,
-    RSI_OVERBOUGHT: 70, // Ajustado para cripto
-    RSI_OVERSOLD: 30, // Ajustado para cripto
+    RSI_OVERBOUGHT: 70,
+    RSI_OVERSOLD: 30,
     STOCH_OVERBOUGHT: 85,
     STOCH_OVERSOLD: 15,
-    WILLIAMS_OVERBOUGHT: -15, // Mais sensível
-    WILLIAMS_OVERSOLD: -85, // Mais sensível
-    VOLUME_ALTO: 1.5, // Volume mais importante em cripto
-    VARIACAO_LATERAL: 1.2, // Mercado lateral mais amplo
-    VWAP_DESVIO: 0.003, // Desvio maior para cripto
-    ATR_LIMIAR: 0.0050 // Volatilidade maior
+    WILLIAMS_OVERBOUGHT: -15,
+    WILLIAMS_OVERSOLD: -85,
+    VOLUME_ALTO: 1.5,
+    VARIACAO_LATERAL: 2.5,  // Aumentado para cripto
+    VWAP_DESVIO: 0.003,
+    ATR_LIMIAR: 0.0050,
+    MIN_INCLINACAO_EMA: 0.5  // Novo parâmetro
   },
   PESOS: {
     RSI: 1.5,
     MACD: 2.0,
-    TENDENCIA: 2.0, // Mais importante em cripto
-    VOLUME: 1.2, // Volume mais relevante
+    TENDENCIA: 2.5,  // Aumentado
+    VOLUME: 1.2,
     STOCH: 1.0,
     WILLIAMS: 1.0,
     CONFIRMACAO: 1.0,
-    LATERALIDADE: 1.5,
+    LATERALIDADE: 1.0,  // Reduzido
     VWAP: 1.2,
-    VOLATILIDADE: 1.5, // Mais importante
-    SUPERTREND: 2.2, // Novo peso para Supertrend
-    ICHIMOKU: 1.8 // Peso para Ichimoku
+    VOLATILIDADE: 1.5,
+    SUPERTREND: 2.5,  // Aumentado
+    ICHIMOKU: 2.0  // Aumentado
   },
   RISCO: {
-    MAX_RISCO_POR_OPERACAO: 0.01, // Risco menor para cripto
-    R_R_MINIMO: 2.0, // Risk-reward maior
-    ATR_MULTIPLICADOR_SL: 2, // Stop mais amplo
-    ATR_MULTIPLICADOR_TP: 4 // Take profit maior
+    MAX_RISCO_POR_OPERACAO: 0.01,
+    R_R_MINIMO: 2.0,
+    ATR_MULTIPLICADOR_SL: 2,
+    ATR_MULTIPLICADOR_TP: 4
   }
 };
 
@@ -97,8 +98,6 @@ function atualizarRelogio() {
       minute: '2-digit',
       second: '2-digit'
     });
-    
-    // Mercado de cripto está sempre aberto
     state.marketOpen = true;
   }
 }
@@ -133,7 +132,7 @@ function rotacionarApiKey() {
 }
 
 // =============================================
-// INDICADORES TÉCNICOS (ATUALIZADOS PARA CRIPTO)
+// INDICADORES TÉCNICOS (MANTIDOS)
 // =============================================
 const calcularMedia = {
   simples: (dados, periodo) => {
@@ -158,7 +157,6 @@ const calcularMedia = {
   }
 };
 
-// RSI ajustado para cripto
 function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {
   if (!Array.isArray(closes) || closes.length < periodo + 1) return 50;
   
@@ -186,7 +184,6 @@ function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {
   return 100 - (100 / (1 + rs));
 }
 
-// Stochastic ajustado
 function calcularStochastic(highs, lows, closes, periodo = CONFIG.PERIODOS.STOCH) {
   try {
     if (!Array.isArray(closes) || closes.length < periodo) return { k: 50, d: 50 };
@@ -215,7 +212,6 @@ function calcularStochastic(highs, lows, closes, periodo = CONFIG.PERIODOS.STOCH
   }
 }
 
-// Williams %R ajustado
 function calcularWilliams(highs, lows, closes, periodo = CONFIG.PERIODOS.WILLIAMS) {
   try {
     if (!Array.isArray(closes) || closes.length < periodo) return 0;
@@ -233,7 +229,6 @@ function calcularWilliams(highs, lows, closes, periodo = CONFIG.PERIODOS.WILLIAM
   }
 }
 
-// MACD ajustado
 function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA, 
                     lenta = CONFIG.PERIODOS.MACD_LENTA, 
                     sinal = CONFIG.PERIODOS.MACD_SINAL) {
@@ -267,7 +262,6 @@ function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA,
   }
 }
 
-// VWAP ajustado
 function calcularVWAP(dados, periodo = CONFIG.PERIODOS.VWAP) {
   try {
     if (!Array.isArray(dados) || dados.length < periodo) return 0;
@@ -290,7 +284,6 @@ function calcularVWAP(dados, periodo = CONFIG.PERIODOS.VWAP) {
   }
 }
 
-// ATR ajustado
 function calcularATR(dados, periodo = CONFIG.PERIODOS.ATR) {
   try {
     if (!Array.isArray(dados) || dados.length < periodo + 1) return 0;
@@ -312,7 +305,6 @@ function calcularATR(dados, periodo = CONFIG.PERIODOS.ATR) {
   }
 }
 
-// NOVO: Supertrend para cripto
 function calcularSupertrend(highs, lows, closes, periodo = CONFIG.PERIODOS.SUPERTREND, multiplier = CONFIG.PERIODOS.SUPERTREND_MULTIPLIER) {
   try {
     if (!Array.isArray(closes) || closes.length < periodo) return { direcao: null, valor: null };
@@ -377,31 +369,25 @@ function calcularSupertrend(highs, lows, closes, periodo = CONFIG.PERIODOS.SUPER
   }
 }
 
-// NOVO: Ichimoku Cloud para cripto
 function calcularIchimoku(highs, lows, closes, tenkan = CONFIG.PERIODOS.ICHIMOKU_TENKAN, 
                          kijun = CONFIG.PERIODOS.ICHIMOKU_KIJUN, senkou = CONFIG.PERIODOS.ICHIMOKU_SENKOU) {
   try {
     if (!Array.isArray(closes) || closes.length < senkou + kijun) return null;
     
-    // Tenkan-sen (Conversion Line)
     const highestHighTenkan = Math.max(...highs.slice(-tenkan));
     const lowestLowTenkan = Math.min(...lows.slice(-tenkan));
     const tenkanSen = (highestHighTenkan + lowestLowTenkan) / 2;
     
-    // Kijun-sen (Base Line)
     const highestHighKijun = Math.max(...highs.slice(-kijun));
     const lowestLowKijun = Math.min(...lows.slice(-kijun));
     const kijunSen = (highestHighKijun + lowestLowKijun) / 2;
     
-    // Senkou Span A (Leading Span A)
     const senkouA = (tenkanSen + kijunSen) / 2;
     
-    // Senkou Span B (Leading Span B)
     const highestHighSenkou = Math.max(...highs.slice(-senkou));
     const lowestLowSenkou = Math.min(...lows.slice(-senkou));
     const senkouB = (highestHighSenkou + lowestLowSenkou) / 2;
     
-    // Chikou Span (Lagging Span)
     const chikouSpan = closes[closes.length - 26] || null;
     
     return {
@@ -423,11 +409,40 @@ function calcularIchimoku(highs, lows, closes, tenkan = CONFIG.PERIODOS.ICHIMOKU
 }
 
 // =============================================
-// SISTEMA DE DECISÃO (ATUALIZADO PARA CRIPTO)
+// SISTEMA DE DECISÃO (ATUALIZADO)
 // =============================================
+function detectarMercadoLateral(closes) {
+  if (!Array.isArray(closes) || closes.length < CONFIG.PERIODOS.ANALISE_LATERAL) return false;
+  
+  const ultimosPrecos = closes.slice(-CONFIG.PERIODOS.ANALISE_LATERAL);
+  const maximo = Math.max(...ultimosPrecos);
+  const minimo = Math.min(...ultimosPrecos);
+  const variacao = ((maximo - minimo) / minimo) * 100;
+  
+  const emaCurta = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_CURTA).pop();
+  const emaLonga = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_LONGA).pop();
+  const inclinacao = Math.abs((emaCurta - emaLonga) / emaLonga * 100);
+  
+  return variacao < CONFIG.LIMIARES.VARIACAO_LATERAL && inclinacao < CONFIG.LIMIARES.MIN_INCLINACAO_EMA;
+}
+
 function avaliarTendencia(closes, emaCurta, emaLonga, ema200, supertrend, ichimoku) {
   if (!Array.isArray(closes) || closes.length < CONFIG.PERIODOS.VELAS_CONFIRMACAO) return "NEUTRA";
   
+  // Primeiro verificar os indicadores de tendência mais fortes
+  const volumeAtual = closes[closes.length - 1].volume;
+  const volumeMedio = calcularMedia.simples(closes.map(c => c.volume), 20);
+  const volumeAlto = volumeAtual > volumeMedio * CONFIG.LIMIARES.VOLUME_ALTO;
+  
+  if (supertrend.direcao === 'up' && ichimoku && ichimoku.acimaDaNuvem && volumeAlto) {
+    return "FORTE_ALTA";
+  }
+  
+  if (supertrend.direcao === 'down' && ichimoku && ichimoku.abaixoDaNuvem && volumeAlto) {
+    return "FORTE_BAIXA";
+  }
+  
+  // Só então verificar lateralidade
   if (detectarMercadoLateral(closes)) {
     state.contadorLaterais++;
     return "LATERAL";
@@ -438,28 +453,8 @@ function avaliarTendencia(closes, emaCurta, emaLonga, ema200, supertrend, ichimo
   const ultimoClose = closes[closes.length - 1];
   const penultimoClose = closes[closes.length - 2];
   
-  // Verificação Supertrend
-  if (supertrend.direcao === 'down') {
-    return "FORTE_BAIXA";
-  }
-  
-  if (supertrend.direcao === 'up') {
-    return "FORTE_ALTA";
-  }
-  
-  // Verificação Ichimoku
-  if (ichimoku) {
-    if (ichimoku.acimaDaNuvem && ichimoku.tendencia === 'alta' && ultimoClose > ichimoku.tenkanSen) {
-      return "FORTE_ALTA";
-    }
-    
-    if (ichimoku.abaixoDaNuvem && ichimoku.tendencia === 'baixa' && ultimoClose < ichimoku.tenkanSen) {
-      return "FORTE_BAIXA";
-    }
-  }
-  
   const diffEMAs = emaCurta - emaLonga;
-  const threshold = 0.005; // Aumentado para cripto
+  const threshold = 0.005;
   
   if (ultimoClose > emaCurta && diffEMAs > threshold && ultimoClose > penultimoClose) {
     return "ALTA";
@@ -471,21 +466,9 @@ function avaliarTendencia(closes, emaCurta, emaLonga, ema200, supertrend, ichimo
   return "NEUTRA";
 }
 
-function detectarMercadoLateral(closes) {
-  if (!Array.isArray(closes) || closes.length < CONFIG.PERIODOS.ANALISE_LATERAL) return false;
-  
-  const ultimosPrecos = closes.slice(-CONFIG.PERIODOS.ANALISE_LATERAL);
-  const maximo = Math.max(...ultimosPrecos);
-  const minimo = Math.min(...ultimosPrecos);
-  const variacao = ((maximo - minimo) / minimo) * 100;
-  
-  return variacao < CONFIG.LIMIARES.VARIACAO_LATERAL;
-}
-
 function calcularScore(indicadores) {
   let score = 50;
 
-  // Análise de RSI
   if (indicadores.rsi < CONFIG.LIMIARES.RSI_OVERSOLD) {
     score += 25 * CONFIG.PESOS.RSI;
     if (indicadores.tendencia.includes("BAIXA")) score -= 10;
@@ -497,81 +480,67 @@ function calcularScore(indicadores) {
   else if (indicadores.rsi < 40) score += 10 * CONFIG.PESOS.RSI;
   else if (indicadores.rsi > 60) score -= 10 * CONFIG.PESOS.RSI;
 
-  // Análise MACD
   score += (Math.min(Math.max(indicadores.macd.histograma * 100, -15), 15) * CONFIG.PESOS.MACD);
 
-  // Análise de Tendência
   switch(indicadores.tendencia) {
     case "FORTE_ALTA": 
-      score += 25 * CONFIG.PESOS.TENDENCIA; 
-      if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO * 1.5) score += 8;
+      score += 30 * CONFIG.PESOS.TENDENCIA;
+      if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO * 1.5) score += 10;
       break;
-    case "ALTA": score += 15 * CONFIG.PESOS.TENDENCIA; break;
+    case "ALTA": score += 20 * CONFIG.PESOS.TENDENCIA; break;
     case "FORTE_BAIXA": 
-      score -= 25 * CONFIG.PESOS.TENDENCIA; 
-      if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO * 1.5) score -= 8;
+      score -= 30 * CONFIG.PESOS.TENDENCIA;
+      if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO * 1.5) score -= 10;
       break;
-    case "BAIXA": score -= 15 * CONFIG.PESOS.TENDENCIA; break;
+    case "BAIXA": score -= 20 * CONFIG.PESOS.TENDENCIA; break;
     case "LATERAL": 
-      score -= Math.min(state.contadorLaterais, 15) * CONFIG.PESOS.LATERALIDADE; 
+      score -= Math.min(state.contadorLaterais, 10) * CONFIG.PESOS.LATERALIDADE;
       break;
   }
 
-  // Análise de Volume
   if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO) {
-    score += (indicadores.tendencia.includes("ALTA") ? 10 : -10) * CONFIG.PESOS.VOLUME;
+    score += (indicadores.tendencia.includes("ALTA") ? 12 : -12) * CONFIG.PESOS.VOLUME;
   }
 
-  // Análise Stochastic
   if (indicadores.stoch.k < CONFIG.LIMIARES.STOCH_OVERSOLD && 
       indicadores.stoch.d < CONFIG.LIMIARES.STOCH_OVERSOLD) {
     score += 15 * CONFIG.PESOS.STOCH;
-    if (indicadores.tendencia.includes("ALTA")) score -= 5;
   }
   if (indicadores.stoch.k > CONFIG.LIMIARES.STOCH_OVERBOUGHT && 
       indicadores.stoch.d > CONFIG.LIMIARES.STOCH_OVERBOUGHT) {
     score -= 15 * CONFIG.PESOS.STOCH;
-    if (indicadores.tendencia.includes("BAIXA")) score += 5;
   }
 
-  // Análise Williams
   if (indicadores.williams < CONFIG.LIMIARES.WILLIAMS_OVERSOLD) {
-    score += 12 * CONFIG.PESOS.WILLIAMS; 
-    if (indicadores.rsi < 40) score += 5;
+    score += 12 * CONFIG.PESOS.WILLIAMS;
   }
   if (indicadores.williams > CONFIG.LIMIARES.WILLIAMS_OVERBOUGHT) {
-    score -= 12 * CONFIG.PESOS.WILLIAMS; 
-    if (indicadores.rsi > 60) score -= 5;
+    score -= 12 * CONFIG.PESOS.WILLIAMS;
   }
 
-  // Análise VWAP
   const vwapDesvio = Math.abs(indicadores.close - indicadores.vwap) / Math.max(indicadores.vwap, 0.000001);
   if (vwapDesvio > CONFIG.LIMIARES.VWAP_DESVIO) {
-    score += (indicadores.close > indicadores.vwap ? 10 : -10) * CONFIG.PESOS.VWAP;
+    score += (indicadores.close > indicadores.vwap ? 12 : -12) * CONFIG.PESOS.VWAP;
   }
 
-  // Análise de Volatilidade (ATR)
   if (indicadores.atr > CONFIG.LIMIARES.ATR_LIMIAR) {
-    score += 8 * CONFIG.PESOS.VOLATILIDADE;
+    score += 10 * CONFIG.PESOS.VOLATILIDADE;
   }
 
-  // Análise Supertrend
   if (indicadores.supertrend.direcao === 'up') {
-    score += 15 * CONFIG.PESOS.SUPERTREND;
+    score += 18 * CONFIG.PESOS.SUPERTREND;
   } else if (indicadores.supertrend.direcao === 'down') {
-    score -= 15 * CONFIG.PESOS.SUPERTREND;
+    score -= 18 * CONFIG.PESOS.SUPERTREND;
   }
 
-  // Análise Ichimoku
   if (indicadores.ichimoku) {
     if (indicadores.ichimoku.acimaDaNuvem && indicadores.ichimoku.tendencia === 'alta') {
-      score += 12 * CONFIG.PESOS.ICHIMOKU;
+      score += 15 * CONFIG.PESOS.ICHIMOKU;
     } else if (indicadores.ichimoku.abaixoDaNuvem && indicadores.ichimoku.tendencia === 'baixa') {
-      score -= 12 * CONFIG.PESOS.ICHIMOKU;
+      score -= 15 * CONFIG.PESOS.ICHIMOKU;
     }
   }
 
-  // Confirmações
   const confirmacoes = [
     indicadores.rsi < 35 || indicadores.rsi > 65,
     Math.abs(indicadores.macd.histograma) > 0.1,
@@ -586,7 +555,7 @@ function calcularScore(indicadores) {
   score += confirmacoes * 5 * CONFIG.PESOS.CONFIRMACAO;
 
   if (state.ultimoSinal) {
-    score += (state.ultimoSinal === "CALL" ? -12 : 12);
+    score += (state.ultimoSinal === "CALL" ? -10 : 10);
   }
 
   return Math.min(100, Math.max(0, Math.round(score)));
@@ -607,7 +576,7 @@ function determinarSinal(score, tendencia) {
 }
 
 // =============================================
-// CORE DO SISTEMA (ATUALIZADO PARA CRIPTO)
+// CORE DO SISTEMA (MANTIDO)
 // =============================================
 async function obterDadosCripto() {
   for (const endpoint of CONFIG.API_ENDPOINTS) {
