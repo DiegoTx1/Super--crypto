@@ -1,197 +1,106 @@
-/* Estilos gerais */
+/* ============================================= */
+/* ESTILO ROBÔ ANALISTA TX1 - COM IMAGEM DE FUNDO */
+/* ============================================= */
+
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background-color: #1a1a2e;
-  color: #e6e6e6;
+  font-family: 'Orbitron', 'Segoe UI', sans-serif; /* Fonte tech */
+  background: 
+    linear-gradient(rgba(10, 20, 30, 0.92), rgba(5, 15, 25, 0.95)),
+    url('https://images.unsplash.com/photo-1620712943543-bcc4688e7485?ixlib=rb-4.0.3&q=85&fm=jpg&crop=entropy&cs=srgb') no-repeat center center fixed;
+  background-size: cover;
+  color: #00f3ff; /* Ciano tecnológico */
   margin: 0;
   padding: 20px;
   line-height: 1.6;
+  min-height: 100vh;
+  text-shadow: 0 0 5px rgba(0, 243, 255, 0.3);
 }
 
-/* Container principal */
 .container {
-  max-width: 800px;
-  margin: 0 auto;
-  background-color: #16213e;
-  border-radius: 10px;
-  padding: 20px;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+  background-color: rgba(0, 20, 40, 0.85);
+  border-radius: 8px;
+  padding: 25px;
+  border: 1px solid #00f3ff;
+  box-shadow: 
+    0 0 15px rgba(0, 243, 255, 0.2),
+    inset 0 0 10px rgba(0, 243, 255, 0.1);
+  backdrop-filter: blur(3px);
 }
 
-/* Cabeçalho */
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 15px;
-  border-bottom: 1px solid #2d3748;
-}
-
-/* Elementos de status */
-.status {
-  display: flex;
-  gap: 15px;
-}
-
-.status-item {
-  background-color: #0f3460;
-  padding: 8px 15px;
-  border-radius: 5px;
-  font-weight: bold;
-}
-
-/* Comando principal */
+/* Efeitos especiais para o robô TX1 */
 #comando {
-  font-size: 2.5rem;
-  text-align: center;
-  padding: 30px;
-  margin: 20px 0;
-  border-radius: 8px;
-  font-weight: bold;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  transition: all 0.3s ease;
+  font-size: 2.8rem;
+  letter-spacing: 2px;
+  background: rgba(0, 10, 20, 0.7);
+  border: 2px solid;
+  padding: 20px;
+  margin: 25px 0;
+  position: relative;
+  overflow: hidden;
 }
 
-#comando.call {
-  background-color: rgba(0, 200, 83, 0.2);
-  color: #00c853;
-  border: 2px solid #00c853;
+#comando::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    to bottom right,
+    transparent 45%,
+    rgba(0, 243, 255, 0.1) 50%,
+    transparent 55%
+  );
+  animation: shine 4s infinite;
 }
 
-#comando.put {
-  background-color: rgba(255, 64, 129, 0.2);
-  color: #ff4081;
-  border: 2px solid #ff4081;
-}
-
-#comando.esperar {
-  background-color: rgba(255, 171, 0, 0.2);
-  color: #ffab00;
-  border: 2px solid #ffab00;
-}
-
-#comando.erro {
-  background-color: rgba(244, 67, 54, 0.2);
-  color: #f44336;
-  border: 2px solid #f44336;
-}
-
-/* Score de confiança */
-#score {
-  text-align: center;
-  font-size: 1.2rem;
-  margin-bottom: 20px;
-  font-weight: bold;
-}
-
-/* Seção de critérios */
-#criterios {
-  background-color: #0f3460;
-  padding: 15px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-}
-
-#criterios ul {
-  list-style-type: none;
-  padding: 0;
-  margin: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 10px;
-}
-
-#criterios li {
-  padding: 8px;
-  border-bottom: 1px solid #2d3748;
-}
-
-/* Histórico de sinais */
-#ultimos {
-  background-color: #0f3460;
-  padding: 15px;
-  border-radius: 8px;
-}
-
-#ultimos ul {
-  list-style-type: none;
-  padding: 0;
-  margin: 0;
-}
-
-#ultimos li {
-  padding: 8px;
-  border-bottom: 1px solid #2d3748;
-  display: flex;
-  justify-content: space-between;
-}
-
-/* Timer */
-#timer {
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 1.2rem;
-}
-
-/* Responsividade */
-@media (max-width: 600px) {
-  .status {
-    flex-direction: column;
-    gap: 8px;
-  }
-  
-  #comando {
-    font-size: 1.8rem;
-    padding: 20px;
-  }
-  
-  #criterios ul {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Animações */
-@keyframes pulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-  100% { transform: scale(1); }
+@keyframes shine {
+  0% { transform: translate(-30%, -30%) rotate(0deg); }
+  100% { transform: translate(30%, 30%) rotate(360deg); }
 }
 
 .call {
-  animation: pulse 2s infinite;
+  color: #0f0;
+  border-color: #0f0;
+  text-shadow: 0 0 10px #0f0;
 }
 
 .put {
-  animation: pulse 2s infinite;
+  color: #f00;
+  border-color: #f00;
+  text-shadow: 0 0 10px #f00;
 }
 
-/* Estilos para o seletor de par */
-.pair-selector {
-  margin-bottom: 20px;
+.esperar {
+  color: #ff0;
+  border-color: #ff0;
+  text-shadow: 0 0 10px #ff0;
 }
 
-.pair-selector select {
-  background-color: #0f3460;
-  color: #e6e6e6;
-  border: 1px solid #2d3748;
+/* Status do robô */
+.status-item {
+  background: rgba(0, 50, 80, 0.3);
+  border: 1px solid #00f3ff;
+  border-radius: 4px;
   padding: 8px 15px;
-  border-radius: 5px;
-  font-size: 1rem;
+  font-family: 'Courier New', monospace;
 }
 
-/* Estilos para o botão de atualização manual */
-.refresh-btn {
-  background-color: #0f3460;
-  color: #e6e6e6;
-  border: 1px solid #2d3748;
-  padding: 8px 15px;
-  border-radius: 5px;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: background-color 0.3s;
+/* Efeito de terminal nos textos */
+#criterios li, #ultimos li {
+  font-family: 'Courier New', monospace;
+  background: rgba(0, 30, 60, 0.5);
+  border-left: 3px solid #00f3ff;
+  margin: 8px 0;
+  padding: 10px;
+  transition: all 0.3s;
 }
 
-.refresh-btn:hover {
-  background-color: #1a3a6e;
+#criterios li:hover, #ultimos li:hover {
+  background: rgba(0, 60, 90, 0.7);
+  transform: translateX(5px);
 }
+
+/* Adicione isto no seu HTML <head> para a fonte Orbitron */
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
