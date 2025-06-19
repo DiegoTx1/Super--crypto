@@ -491,7 +491,7 @@ function calcularScore(indicadores) {
   else if (indicadores.rsi < 40) score += 10 * CONFIG.PESOS.RSI;
   else if (indicadores.rsi > 60) score -= 10 * CONFIG.PESOS.RSI;
 
-  score += (Math.min(Math.max(indicadores.macd.histograma * 100, -15), 15) * CONFIG.PESOS.MACD;
+  score += (Math.min(Math.max(indicadores.macd.histograma * 100, -15), 15)) * CONFIG.PESOS.MACD;
 
   switch(indicadores.tendencia) {
     case "FORTE_ALTA": 
@@ -662,7 +662,7 @@ async function analisarMercado() {
       emaCurta,
       emaLonga,
       ema200,
-      volume: velaAtual.volume > 0 ? velaAtual.volume : 0.001, // Correção para volume zerado
+      volume: velaAtual.volume > 0 ? velaAtual.volume : 0.001,
       volumeMedia: Math.max(calcularMedia.simples(volumes, CONFIG.PERIODOS.SMA_VOLUME), 0.001) || 0.001,
       stoch: calcularStochastic(highs, lows, closes),
       williams: calcularWilliams(highs, lows, closes),
@@ -771,6 +771,41 @@ function iniciarAplicativo() {
   setInterval(atualizarRelogio, 1000);
   sincronizarTimer();
   analisarMercado();
+  
+  // Iniciar WebSocket para atualizações em tempo real
+  iniciarWebSocket();
+}
+
+function iniciarWebSocket() {
+  if (state.websocket) state.websocket.close();
+  
+  state.websocket = new WebSocket(CONFIG.WS_ENDPOINT);
+  
+  state.websocket.onopen = () => {
+    console.log("Conexão WebSocket estabelecida");
+    // Subscrever ao par BTCUSDT
+    state.websocket.send(JSON.stringify({
+      method: "SUBSCRIBE",
+      params: ["btcusdt@kline_1m"],
+      id: 1
+    }));
+  };
+  
+  state.websocket.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.k && data.k.x) { // Se for uma vela completa
+      analisarMercado();
+    }
+  };
+  
+  state.websocket.onerror = (error) => {
+    console.error("Erro WebSocket:", error);
+  };
+  
+  state.websocket.onclose = () => {
+    console.log("Conexão WebSocket fechada. Reconectando...");
+    setTimeout(iniciarWebSocket, 5000);
+  };
 }
 
 if(document.readyState==="complete") iniciarAplicativo();
