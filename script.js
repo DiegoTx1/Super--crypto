@@ -179,6 +179,7 @@ function calcularStochastic(highs, lows, closes, periodo = CONFIG.PERIODOS.STOCH
   };
 }
 
+// CORREÇÃO WILLIAMS %R
 function calcularWilliams(highs, lows, closes, periodo = CONFIG.PERIODOS.WILLIAMS) {
   if (!Array.isArray(closes) || closes.length < periodo) return 0;
   const sliceHigh = highs.slice(-periodo);
@@ -186,7 +187,9 @@ function calcularWilliams(highs, lows, closes, periodo = CONFIG.PERIODOS.WILLIAM
   const highestHigh = Math.max(...sliceHigh);
   const lowestLow = Math.min(...sliceLow);
   const range = highestHigh - lowestLow;
-  return range > 0 ? ((highestHigh - closes[closes.length - 1]) / range) * -100 : 0;
+  return range > 0 ? 
+    ((highestHigh - closes[closes.length - 1]) / range) * -100 : 
+    0;
 }
 
 function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA,
@@ -208,27 +211,42 @@ function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA,
   };
 }
 
+// CORREÇÃO VWAP (formato Binance)
 function calcularVWAP(dados, periodo = CONFIG.PERIODOS.VWAP) {
   if (!Array.isArray(dados) || dados.length < periodo) return 0;
   let typicalPriceSum = 0;
   let volumeSum = 0;
   for (const vela of dados.slice(-periodo)) {
-    if (!vela.volume || isNaN(vela.volume)) continue;
-    const typicalPrice = (vela.high + vela.low + vela.close) / 3;
-    typicalPriceSum += typicalPrice * vela.volume;
-    volumeSum += vela.volume;
+    // Formato Binance: [openTime, open, high, low, close, volume]
+    const high = parseFloat(vela[2]);
+    const low = parseFloat(vela[3]);
+    const close = parseFloat(vela[4]);
+    const volume = parseFloat(vela[5]);
+    
+    if (!volume || isNaN(volume)) continue;
+    const typicalPrice = (high + low + close) / 3;
+    typicalPriceSum += typicalPrice * volume;
+    volumeSum += volume;
   }
   return volumeSum > 0 ? typicalPriceSum / volumeSum : 0;
 }
 
+// CORREÇÃO ATR (formato Binance)
 function calcularATR(dados, periodo = CONFIG.PERIODOS.ATR) {
   if (!Array.isArray(dados) || dados.length < periodo + 1) return 0;
   const trValues = [];
   for (let i = 1; i < dados.length; i++) {
+    const velaAtual = dados[i];
+    const velaAnterior = dados[i-1];
+    
+    const high = parseFloat(velaAtual[2]);
+    const low = parseFloat(velaAtual[3]);
+    const prevClose = parseFloat(velaAnterior[4]);
+    
     const tr = Math.max(
-      dados[i].high - dados[i].low,
-      Math.abs(dados[i].high - dados[i - 1].close),
-      Math.abs(dados[i].low - dados[i - 1].close)
+      high - low,
+      Math.abs(high - prevClose),
+      Math.abs(low - prevClose)
     );
     trValues.push(tr);
   }
@@ -240,15 +258,21 @@ function calcularATR(dados, periodo = CONFIG.PERIODOS.ATR) {
 // =============================================
 function avaliarTendencia(closes, emaCurta, emaLonga, ema200) {
   if (!Array.isArray(closes) || closes.length < CONFIG.PERIODOS.VELAS_CONFIRMACAO) return "NEUTRA";
-  if (detectarMercadoLateral(closes)) {
+  
+  // CORREÇÃO: Resetar contador lateral se não estiver em lateral
+  const lateral = detectarMercadoLateral(closes);
+  if (lateral) {
     state.contadorLaterais++;
     return "LATERAL";
+  } else {
+    state.contadorLaterais = 0;
   }
-  state.contadorLaterais = 0;
+  
   const ultimoClose = closes[closes.length - 1];
   const penultimoClose = closes[closes.length - 2];
   const diffEMAs = emaCurta - emaLonga;
   const threshold = 0.0010;
+  
   if (ultimoClose > emaCurta && diffEMAs > threshold && ultimoClose > penultimoClose) return "FORTE_ALTA";
   if (ultimoClose < emaCurta && diffEMAs < -threshold && ultimoClose < penultimoClose) return "FORTE_BAIXA";
   if (ultimoClose > emaCurta && diffEMAs > threshold / 2) return "ALTA";
@@ -318,18 +342,16 @@ function determinarSinal(score, tendencia) {
 async function obterDadosCripto() {
   const url = `${CONFIG.HTTP_ENDPOINT}?symbol=${CONFIG.PARES.CRIPTOIDX}&interval=1m&limit=150`;
   try {
-    const response = await fetch(url);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     const data = await response.json();
     if (!Array.isArray(data) || data.length === 0) throw new Error("Dados vazios");
-    return data.map(v => ({
-      time: v[0],
-      open: parseFloat(v[1]),
-      high: parseFloat(v[2]),
-      low: parseFloat(v[3]),
-      close: parseFloat(v[4]),
-      volume: parseFloat(v[5])
-    }));
+    return data;
   } catch (e) {
     console.error("Erro ao buscar dados:", e);
     throw new Error("Falha na coleta de dados");
@@ -340,14 +362,16 @@ async function obterDadosCripto() {
 // ANÁLISE DO MERCADO
 // =============================================
 async function analisarMercado() {
-  if (state.leituraEmAndamento) return;
+  if (state.leituraEmAndamento || !state.marketOpen) return;
   state.leituraEmAndamento = true;
+  
   try {
     const dados = await obterDadosCripto();
-    const closes = dados.map(v => v.close);
-    const highs = dados.map(v => v.high);
-    const lows = dados.map(v => v.low);
-    const volumes = dados.map(v => v.volume);
+    const closes = dados.map(v => parseFloat(v[4]));
+    const highs = dados.map(v => parseFloat(v[2]));
+    const lows = dados.map(v => parseFloat(v[3]));
+    const volumes = dados.map(v => parseFloat(v[5]));
+    
     const emaCurtaArray = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_CURTA);
     const emaLongaArray = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_LONGA);
     const ema200Array = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_200);
@@ -423,16 +447,21 @@ async function analisarMercado() {
 // =============================================
 // CONTROLE DE TEMPO E INICIALIZAÇÃO
 // =============================================
+// CORREÇÃO TIMER (sincronização correta)
 function sincronizarTimer() {
   clearInterval(state.intervaloAtual);
-  const agora = Date.now();
-  const delay = 60000 - (agora % 60000);
-  state.timer = Math.floor(delay / 1000);
+  
+  // Usar Date() em vez de Date.now() para sincronização precisa
+  const agora = new Date();
+  const segundos = agora.getSeconds();
+  state.timer = 60 - segundos;
+  
   const elementoTimer = document.getElementById("timer");
   if (elementoTimer) {
     elementoTimer.textContent = formatarTimer(state.timer);
     elementoTimer.style.color = state.timer <= 5 ? 'red' : '';
   }
+  
   state.intervaloAtual = setInterval(() => {
     state.timer--;
     if (elementoTimer) {
@@ -453,9 +482,38 @@ function iniciarAplicativo() {
     console.error("Elementos faltando:", faltando);
     return;
   }
+  
   setInterval(atualizarRelogio, 1000);
   sincronizarTimer();
   analisarMercado().finally(sincronizarTimer);
+  
+  // INICIALIZAÇÃO DO WEBSOCKET (ADICIONADO)
+  state.websocket = new WebSocket(CONFIG.WS_ENDPOINT);
+  
+  state.websocket.onmessage = (event) => {
+    const trade = JSON.parse(event.data);
+    const price = parseFloat(trade.p);
+    
+    // Atualizar dados em tempo real
+    if(state.ultimos.length > 0) {
+      state.ultimos[0].close = price;
+      if(price > state.ultimos[0].high) state.ultimos[0].high = price;
+      if(price < state.ultimos[0].low) state.ultimos[0].low = price;
+    }
+  };
+  
+  state.websocket.onerror = (error) => {
+    console.error("WebSocket error:", error);
+    setTimeout(() => {
+      state.websocket = new WebSocket(CONFIG.WS_ENDPOINT);
+    }, 5000);
+  };
+  
+  // Prevenir memory leaks
+  window.addEventListener('beforeunload', () => {
+    if(state.websocket) state.websocket.close();
+    clearInterval(state.intervaloAtual);
+  });
 }
 
 if (document.readyState === "complete") {
