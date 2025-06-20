@@ -1,40 +1,47 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>TX1 💹👨🏽‍💻</title>
+  <title>TX1 PRO 💹👨🏽‍💻</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="container">
-    <h1>TX1 💹👨🏽‍💻</h1>
+    <h1>TX1 PRO 💹👨🏽‍💻</h1>
     <div class="painel-central">
       <div class="coluna-esquerda">
         <p>Comando Atual: <span id="comando">ESPERAR</span></p>
-        <p>Score de Confiança: <span id="score">--%</span></p>
-        <p>Próxima Leitura em: <span id="timer">60</span>s</p>
-        <p>Última Análise: <span id="hora">--:--:--</span></p>
+        <p>Score: <span id="score">--%</span></p>
+        <p>Próxima Análise: <span id="timer">60</span>s</p>
+        <p>Última Atualização: <span id="hora">--:--:--</span></p>
         <div>
-          <h3>Critérios Técnicos</h3>
+          <h3>Critérios</h3>
           <ul id="criterios"></ul>
         </div>
-        <div>
-          <button onclick="registrar('WIN')">WIN</button>
-          <button onclick="registrar('LOSS')">LOSS</button>
-          <p>Histórico: <span id="historico">0 WIN / 0 LOSS</span></p>
+        <div class="trade-buttons">
+          <button id="btn-win">WIN</button>
+          <button id="btn-loss">LOSS</button>
+          <p>Performance: <span id="performance">0%</span></p>
         </div>
       </div>
       <div class="coluna-direita">
-        <h3>Últimos Sinais</h3>
-        <ul id="ultimos"></ul>
+        <h3>Mercado</h3>
+        <ul id="market-data">
+          <li>BTC Dominance: <span id="btc-dominance">--%</span></li>
+          <li>Funding Rate: <span id="funding">--%</span></li>
+          <li>Whale Activity: <span id="whale">--</span></li>
+        </ul>
+        <h3>Ordens</h3>
+        <ul id="ordens"></ul>
       </div>
     </div>
-    <iframe class="grafico" src="https://s.tradingview.com/widgetembed/?symbol=BINANCE:BTCUSDT&interval=1&theme=dark"
-      width="100%" height="260" frameborder="0"></iframe>
+    <div class="chart-container">
+      <iframe class="grafico" src="https://www.tradingview.com/chart/?symbol=BINANCE:BTCUSDT" 
+              width="100%" height="500" frameborder="0"></iframe>
+    </div>
   </div>
-  <audio id="som-call" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg" preload="auto"></audio>
-  <audio id="som-put" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
-  <script src="script.js"></script>
+  
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
