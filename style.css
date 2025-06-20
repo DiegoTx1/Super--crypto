@@ -1,42 +1,30 @@
-/* Indicadores visuais de status */
-.connected { color: #10b981; }
-.disconnected { color: #ef4444; }
 
-/* Estilos para sinais */
-.NEUTRO { color: #94a3b8; }
-.CALL { 
-  color: #10b981;
-  animation: pulseCall 2s infinite;
+body {
+  background-color: #000;
+  color: cyan;
+  font-family: monospace;
+  text-align: center;
 }
-.PUT { 
-  color: #ef4444;
-  animation: pulsePut 2s infinite;
+.container {
+  max-width: 900px;
+  margin: auto;
+  padding-top: 20px;
 }
-
-@keyframes pulseCall {
-  0% { text-shadow: 0 0 5px rgba(16, 185, 129, 0.5); }
-  50% { text-shadow: 0 0 20px rgba(16, 185, 129, 0.8); }
-  100% { text-shadow: 0 0 5px rgba(16, 185, 129, 0.5); }
+button {
+  margin: 5px;
+  padding: 8px 20px;
+  font-size: 16px;
 }
-
-@keyframes pulsePut {
-  0% { text-shadow: 0 0 5px rgba(239, 68, 68, 0.5); }
-  50% { text-shadow: 0 0 20px rgba(239, 68, 68, 0.8); }
-  100% { text-shadow: 0 0 5px rgba(239, 68, 68, 0.5); }
+ul { list-style: none; padding: 0; }
+.painel-central {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
 }
-
-/* Elemento de sincronização */
-#sync-indicator {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background-color: #10b981;
-  animation: pulse 1.5s infinite;
+.coluna-esquerda, .coluna-direita {
+  flex: 1;
+  text-align: left;
 }
-
-@keyframes pulse {
-  0% { opacity: 1; }
-  50% { opacity: 0.5; }
-  100% { opacity: 1; }
+.grafico {
+  margin-top: 20px;
 }
