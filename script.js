@@ -1,134 +1,253 @@
-// Variáveis globais atualizadas
 let win = 0, loss = 0;
 let ultimos = [];
-let performanceData = [];
-let currentInterval = '1m';
-let chartInstance = null;
-let lastAnalysisTime = 0; // Armazena timestamp da última análise
+let timerInterval, clockInterval;
+let lastSignalTime = 0;
+const ANALYSIS_INTERVAL = 60; // 60 segundos
 
-// Novo sistema de sincronização temporal
-function sincronizarTemporizador() {
-  // Obtém tempo do servidor Binance para sincronização perfeita
+// Inicialização robusta
+function initSystem() {
+  // Carregar histórico
+  loadHistory();
+  
+  // Iniciar relógio
+  atualizarHora();
+  clockInterval = setInterval(atualizarHora, 1000);
+  
+  // Sincronização temporal precisa
+  syncWithBinanceTime();
+  
+  // Primeira análise imediata
+  setTimeout(leituraReal, 1000);
+}
+
+// Sincronização perfeita com tempo Binance
+function syncWithBinanceTime() {
   fetch('https://api.binance.com/api/v3/time')
     .then(response => response.json())
     .then(data => {
       const serverTime = data.serverTime;
-      const agora = Date.now();
-      const diff = Math.floor((serverTime - agora) / 1000);
+      const now = Date.now();
+      const diff = serverTime - now;
       
-      // Calcula segundos até próxima análise (sincronizado com o minuto do mercado)
-      const segundosAtual = new Date(serverTime).getSeconds();
-      timer = 60 - segundosAtual;
+      // Calcular tempo até o próximo minuto completo
+      const serverDate = new Date(serverTime);
+      const seconds = serverDate.getSeconds();
+      const msToNextMinute = (60 - seconds) * 1000;
       
-      // Se faltar menos de 5s para nova vela, força análise imediata
-      if (timer <= 5) {
-        leituraReal();
-        timer = 60;
-      }
-      
-      document.getElementById("timer").textContent = timer;
+      // Iniciar temporizador sincronizado
+      startSynchronizedTimer(msToNextMinute);
+    })
+    .catch(() => {
+      // Fallback se API falhar
+      const now = new Date();
+      const seconds = now.getSeconds();
+      const msToNextMinute = (60 - seconds) * 1000;
+      startSynchronizedTimer(msToNextMinute);
     });
 }
 
-// Função de análise completamente reformulada
+// Iniciar temporizador preciso
+function startSynchronizedTimer(initialDelay) {
+  // Parar qualquer temporizador existente
+  if (timerInterval) clearInterval(timerInterval);
+  
+  // Configurar temporizador
+  setTimeout(() => {
+    // Executar análise imediatamente no início do minuto
+    leituraReal();
+    
+    // Iniciar contagem regressiva periódica
+    let count = ANALYSIS_INTERVAL;
+    updateTimerDisplay(count);
+    
+    timerInterval = setInterval(() => {
+      count--;
+      updateTimerDisplay(count);
+      
+      if (count <= 0) {
+        leituraReal();
+        count = ANALYSIS_INTERVAL;
+      }
+    }, 1000);
+  }, initialDelay);
+}
+
+// Atualizar exibição do timer
+function updateTimerDisplay(seconds) {
+  document.getElementById("timer").textContent = seconds;
+}
+
+// Carregar histórico do localStorage
+function loadHistory() {
+  const savedWin = localStorage.getItem('win');
+  const savedLoss = localStorage.getItem('loss');
+  const savedSignals = localStorage.getItem('ultimos');
+  
+  if (savedWin) win = parseInt(savedWin);
+  if (savedLoss) loss = parseInt(savedLoss);
+  if (savedSignals) ultimos = JSON.parse(savedSignals);
+  
+  document.getElementById("historico").textContent = `${win} WIN / ${loss} LOSS`;
+  if (ultimos.length > 0) {
+    document.getElementById("ultimos").innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
+  }
+}
+
+// Salvar histórico
+function saveHistory() {
+  localStorage.setItem('win', win.toString());
+  localStorage.setItem('loss', loss.toString());
+  localStorage.setItem('ultimos', JSON.stringify(ultimos));
+}
+
+// Atualizar relógio
+function atualizarHora() {
+  const agora = new Date();
+  document.getElementById("hora").textContent = agora.toLocaleTimeString("pt-BR");
+}
+
+// Registrar resultado
+function registrar(tipo) {
+  if (tipo === 'WIN') win++;
+  else if (tipo === 'LOSS') loss++;
+  
+  document.getElementById("historico").textContent = `${win} WIN / ${loss} LOSS`;
+  saveHistory();
+}
+
+// Pausar/continuar
+function togglePause() {
+  const btn = document.getElementById('btn-pause');
+  const isPaused = btn.textContent === 'CONTINUAR';
+  
+  if (isPaused) {
+    btn.textContent = 'PAUSAR';
+    syncWithBinanceTime(); // Re-sincronizar ao continuar
+  } else {
+    btn.textContent = 'CONTINUAR';
+    clearInterval(timerInterval);
+  }
+}
+
+// Função principal de análise
 async function leituraReal() {
   try {
-    // Atualiza o timestamp da última análise
-    lastAnalysisTime = Date.now();
-    localStorage.setItem('lastAnalysisTime', lastAnalysisTime.toString());
-
-    const marketData = await fetchMarketData();
-    const indicators = calculateAdvancedIndicators(marketData.closes, marketData.volumes);
+    const agora = new Date();
+    lastSignalTime = agora.getTime();
     
-    // 1. Cálculo de tendência REAL (usando EMA 9 e EMA 21)
-    const ema9 = calculateEMA(marketData.closes, 9).pop();
-    const ema21 = calculateEMA(marketData.closes, 21).pop();
-    const tendencia = ema9 > ema21 ? "ALTA" : "BAIXA";
-
-    // 2. Sistema de decisão aprimorado
+    // Buscar dados da Binance
+    const response = await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=100");
+    const data = await response.json();
+    
+    // Processar última vela
+    const lastCandle = data[data.length - 1];
+    const open = parseFloat(lastCandle[1]);
+    const high = parseFloat(lastCandle[2]);
+    const low = parseFloat(lastCandle[3]);
+    const close = parseFloat(lastCandle[4]);
+    const volume = parseFloat(lastCandle[5]);
+    
+    // Calcular indicadores
+    const rsi = calculateRSI(data);
+    const macd = calculateMACD(data);
+    const ema9 = calculateEMA(data, 9);
+    const ema21 = calculateEMA(data, 21);
+    
+    // Gerar sinal
     let comando = "NEUTRO";
     let confidence = 0;
-    const price = marketData.close;
-
-    // Condição CALL (compra)
-    if (
-      price > ema9 &&
-      price > ema21 &&
-      indicators.rsi < 65 &&
-      indicators.macd.histogram > 0
-    ) {
+    
+    // Lógica de sinalização aprimorada
+    if (close > ema9 && close > ema21 && rsi < 60) {
       comando = "CALL";
-      confidence = 85;
-    }
-    // Condição PUT (venda)
-    else if (
-      price < ema9 &&
-      price < ema21 &&
-      indicators.rsi > 35 &&
-      indicators.macd.histogram < 0
-    ) {
+      confidence = 75 + Math.min(25, (ema9 - ema21) * 10);
+    } else if (close < ema9 && close < ema21 && rsi > 40) {
       comando = "PUT";
-      confidence = 85;
+      confidence = 75 + Math.min(25, (ema21 - ema9) * 10);
     }
-
-    // 3. Atualização da interface
+    
+    // Atualizar interface
     document.getElementById("comando").textContent = comando;
     document.getElementById("comando").className = comando;
-    document.getElementById("score").textContent = `${confidence}%`;
+    document.getElementById("score").textContent = `${Math.round(confidence)}%`;
     
-    // Atualização do status do mercado
-    const marketElement = document.getElementById("market-trend");
-    marketElement.textContent = tendencia;
-    marketElement.style.color = tendencia === "ALTA" ? '#10b981' : '#ef4444';
-
-    // ... (restante do código de atualização)
-
+    // Atualizar critérios
+    const criterios = [
+      `Preço: $${close.toFixed(2)}`,
+      `EMA9: $${ema9.toFixed(2)}`,
+      `EMA21: $${ema21.toFixed(2)}`,
+      `RSI: ${rsi.toFixed(2)}`,
+      `Volume: ${(volume / 1000).toFixed(1)}K BTC`
+    ];
+    
+    document.getElementById("criterios").innerHTML = criterios.map(c => `<li>${c}</li>`).join("");
+    
+    // Registrar sinal
+    const horario = agora.toLocaleTimeString("pt-BR");
+    ultimos.unshift(`${horario} - ${comando} (${Math.round(confidence)}%)`);
+    if (ultimos.length > 5) ultimos.pop();
+    document.getElementById("ultimos").innerHTML = ultimos.map(i => `<li>${i}</li>`).join("");
+    saveHistory();
+    
+    // Tocar som de alerta
+    if (comando === "CALL") document.getElementById("som-call").play();
+    if (comando === "PUT") document.getElementById("som-put").play();
+    
   } catch (e) {
     console.error("Erro na análise:", e);
+    document.getElementById("comando").textContent = "ERRO";
+    document.getElementById("comando").className = "";
   }
 }
 
-// Sistema de inicialização sincronizado
-document.addEventListener('DOMContentLoaded', () => {
-  // Recupera último timestamp do localStorage
-  const savedTime = localStorage.getItem('lastAnalysisTime');
-  lastAnalysisTime = savedTime ? parseInt(savedTime) : 0;
+// Funções de indicadores técnicos
+function calculateRSI(candles, period = 14) {
+  const closes = candles.map(c => parseFloat(c[4]));
+  let gains = 0;
+  let losses = 0;
   
-  // Verifica se precisa de nova análise imediata
-  const elapsed = (Date.now() - lastAnalysisTime) / 1000;
-  if (elapsed >= 55) {
-    leituraReal();
+  for (let i = 1; i <= period; i++) {
+    const diff = closes[i] - closes[i-1];
+    if (diff > 0) gains += diff;
+    else losses -= diff;
   }
-
-  sincronizarTemporizador();
-  initChart();
   
-  // Temporizador principal sincronizado
-  setInterval(() => {
-    timer--;
-    document.getElementById("timer").textContent = timer;
-    
-    if (timer === 5) {
-      leituraReal();
-    }
-    
-    if (timer <= 0) {
-      sincronizarTemporizador(); // Ressincroniza com tempo de mercado
-    }
-  }, 1000);
-});
-
-// Adicionar ao fetchMarketData()
-async function fetchMarketData() {
-  try {
-    // Verifica se já temos dados recentes (últimos 30s)
-    if (Date.now() - lastAnalysisTime < 30000) {
-      throw new Error("Dados muito recentes");
-    }
-    
-    // ... (restante do código existente)
-  } catch (e) {
-    // Tenta usar dados locais se possível
-    return getCachedData();
-  }
+  const avgGain = gains / period;
+  const avgLoss = losses / period;
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
 }
+
+function calculateMACD(candles, fast = 12, slow = 26, signal = 9) {
+  const closes = candles.map(c => parseFloat(c[4]));
+  
+  const fastEMA = calculateEMA(closes, fast);
+  const slowEMA = calculateEMA(closes, slow);
+  
+  const macdLine = fastEMA.map((val, i) => val - slowEMA[i]);
+  const signalLine = calculateEMA(macdLine, signal);
+  
+  const histogram = macdLine.map((val, i) => val - (signalLine[i] || 0));
+  
+  return {
+    macdLine: macdLine[macdLine.length - 1],
+    signalLine: signalLine[signalLine.length - 1],
+    histogram: histogram[histogram.length - 1]
+  };
+}
+
+function calculateEMA(data, period) {
+  const k = 2 / (period + 1);
+  const emaArray = [];
+  let ema = data.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  
+  for (let i = period; i < data.length; i++) {
+    ema = data[i] * k + ema * (1 - k);
+    emaArray.push(ema);
+  }
+  
+  return emaArray;
+}
+
+// Inicializar sistema quando a página carregar
+window.addEventListener('load', initSystem);
