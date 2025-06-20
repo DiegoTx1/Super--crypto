@@ -1,430 +1,557 @@
 // =============================================
-// CONFIGURAÇÕES GLOBAIS PROFISSIONAIS (MERCADO REAL)
+// CONFIGURAÇÕES GLOBAIS (REVISADAS PARA CRIPTO IDX 2025)
 // =============================================
-import com.binance.api.client.BinanceApiClientFactory;
-import com.binance.api.client.BinanceApiRestClient;
-import com.binance.api.client.BinanceApiWebSocketClient;
-import com.binance.api.client.domain.market.Candlestick;
-import com.binance.api.client.domain.market.CandlestickInterval;
-import com.binance.api.client.domain.market.OrderBook;
-import com.binance.api.client.domain.market.OrderBookEntry;
-import org.ta4j.core.*;
-import org.ta4j.core.indicators.*;
-import org.ta4j.core.indicators.helpers.*;
-import org.ta4j.core.num.DoubleNum;
+const state = {
+  ultimos: [],
+  timer: 60,
+  ultimaAtualizacao: "",
+  leituraEmAndamento: false,
+  intervaloAtual: null,
+  tentativasErro: 0,
+  ultimoSinal: null,
+  ultimoScore: 0,
+  contadorLaterais: 0,
+  websocket: null,
+  marketOpen: true // Mercado cripto opera 24/7
+};
 
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.stream.Collectors;
+const CONFIG = {
+  WS_ENDPOINT: "wss://stream.binance.com:9443/ws/btcusdt@trade", // WebSocket para BTC/USDT
+  HTTP_ENDPOINT: "https://api.binance.com/api/v3/klines",  // Dados históricos Binance
+  PARES: {
+    CRIPTOIDX: "BTCUSDT" // Substituir por índice real se disponível
+  },
+  PERIODOS: {
+    RSI: 14,
+    STOCH: 14,
+    WILLIAMS: 14,
+    EMA_CURTA: 9,
+    EMA_LONGA: 21,
+    EMA_200: 200,
+    SMA_VOLUME: 20,
+    MACD_RAPIDA: 12,
+    MACD_LENTA: 26,
+    MACD_SINAL: 9,
+    VELAS_CONFIRMACAO: 3,
+    ANALISE_LATERAL: 30,
+    VWAP: 20,
+    ATR: 14
+  },
+  LIMIARES: {
+    SCORE_ALTO: 80,
+    SCORE_MEDIO: 68,
+    RSI_OVERBOUGHT: 70,
+    RSI_OVERSOLD: 30,
+    STOCH_OVERBOUGHT: 85,
+    STOCH_OVERSOLD: 15,
+    WILLIAMS_OVERBOUGHT: -15,
+    WILLIAMS_OVERSOLD: -85,
+    VOLUME_ALTO: 1.5,
+    VARIACAO_LATERAL: 0.5,
+    VWAP_DESVIO: 0.0025,
+    ATR_LIMIAR: 0.0020
+  },
+  PESOS: {
+    RSI: 1.6,
+    MACD: 2.2,
+    TENDENCIA: 1.6,
+    VOLUME: 0.9,
+    STOCH: 1.3,
+    WILLIAMS: 1.1,
+    CONFIRMACAO: 1.1,
+    LATERALIDADE: 2.0,
+    VWAP: 1.4,
+    VOLATILIDADE: 1.3
+  },
+  RISCO: {
+    MAX_RISCO_POR_OPERACAO: 0.015,
+    R_R_MINIMO: 2,
+    ATR_MULTIPLICADOR_SL: 1.8,
+    ATR_MULTIPLICADOR_TP: 3.6
+  }
+};
 
-public class StockityCryptoProBot {
+// =============================================
+// FUNÇÕES UTILITÁRIAS
+// =============================================
+function formatarTimer(segundos) {
+  return `0:${segundos.toString().padStart(2, '0')}`;
+}
 
-    // Configurações sensíveis (devem vir de variáveis de ambiente)
-    private static final String API_KEY = System.getenv("BINANCE_API_KEY");
-    private static final String SECRET_KEY = System.getenv("BINANCE_SECRET_KEY");
-    private static final double CAPITAL_ALOCADO = Double.parseDouble(System.getenv("TRADING_CAPITAL"));
-    
-    // Estado global do sistema
-    private static class BotState {
-        static final List<Double> BTC_DOMINANCE_HISTORY = new CopyOnWriteArrayList<>();
-        static double currentBTCDominance = 0.0;
-        static double fundingRate = 0.0;
-        static double lastEntryPrice = 0.0;
-        static Position currentPosition = Position.NONE;
-        static int consecutiveLosses = 0;
-        static double dynamicRiskPercentage = 0.02;
-        static double equity = CAPITAL_ALOCADO;
-        static final Map<String, Double> LAST_INDICATORS = new ConcurrentHashMap<>();
+function atualizarRelogio() {
+  const elementoHora = document.getElementById("hora");
+  if (elementoHora) {
+    const now = new Date();
+    elementoHora.textContent = now.toLocaleTimeString("pt-BR", {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    state.marketOpen = true;
+  }
+}
+
+function atualizarInterface(sinal, score) {
+  if (!state.marketOpen && sinal !== "ERRO") return;
+  const comandoElement = document.getElementById("comando");
+  if (comandoElement) {
+    comandoElement.textContent = sinal;
+    comandoElement.className = sinal.toLowerCase();
+    if (sinal === "CALL") comandoElement.textContent += " 🚀";
+    else if (sinal === "PUT") comandoElement.textContent += " 💥";
+    else if (sinal === "ESPERAR") comandoElement.textContent += " ⏳";
+  }
+
+  const scoreElement = document.getElementById("score");
+  if (scoreElement) {
+    scoreElement.textContent = `Confiança: ${score}%`;
+    if (score >= CONFIG.LIMIARES.SCORE_ALTO) scoreElement.style.color = '#00ff00';
+    else if (score >= CONFIG.LIMIARES.SCORE_MEDIO) scoreElement.style.color = '#ffff00';
+    else scoreElement.style.color = '#ff0000';
+  }
+
+  document.getElementById("hora").textContent = state.ultimaAtualizacao;
+}
+
+// =============================================
+// INDICADORES TÉCNICOS
+// =============================================
+const calcularMedia = {
+  simples: (dados, periodo) => {
+    if (!Array.isArray(dados) || dados.length < periodo) return null;
+    const slice = dados.slice(-periodo);
+    return slice.reduce((a, b) => a + b, 0) / periodo;
+  },
+  exponencial: (dados, periodo) => {
+    if (!Array.isArray(dados) || dados.length < periodo) return [];
+    const k = 2 / (periodo + 1);
+    let ema = calcularMedia.simples(dados.slice(0, periodo), periodo);
+    const emaArray = [ema];
+    for (let i = periodo; i < dados.length; i++) {
+      ema = dados[i] * k + ema * (1 - k);
+      emaArray.push(ema);
+    }
+    return emaArray;
+  }
+};
+
+function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {
+  if (!Array.isArray(closes) || closes.length < periodo + 1) return 50;
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= periodo; i++) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff > 0) gains += diff;
+    else losses += Math.abs(diff);
+  }
+  let avgGain = gains / periodo;
+  let avgLoss = Math.max(losses / periodo, 0.000001);
+  for (let i = periodo + 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? Math.abs(diff) : 0;
+    avgGain = (avgGain * (periodo - 1) + gain) / periodo;
+    avgLoss = (avgLoss * (periodo - 1) + loss) / periodo;
+  }
+  const rs = avgGain / Math.max(avgLoss, 0.000001);
+  return 100 - (100 / (1 + rs));
+}
+
+function calcularStochastic(highs, lows, closes, periodo = CONFIG.PERIODOS.STOCH) {
+  try {
+    if (!Array.isArray(closes) || closes.length < periodo) return { k: 50, d: 50 };
+    const kValues = [];
+    for (let i = periodo - 1; i < closes.length; i++) {
+      const sliceHigh = highs.slice(Math.max(0, i - periodo + 1), i + 1);
+      const sliceLow = lows.slice(Math.max(0, i - periodo + 1), i + 1);
+      const highestHigh = Math.max(...sliceHigh);
+      const lowestLow = Math.min(...sliceLow);
+      const range = highestHigh - lowestLow;
+      kValues.push(range > 0 ? ((closes[i] - lowestLow) / range) * 100 : 50);
+    }
+    const dValues = kValues.length >= 3 ? calcularMedia.simples(kValues.slice(-3), 3) : 50;
+    return {
+      k: kValues[kValues.length - 1] || 50,
+      d: dValues || 50
+    };
+  } catch (e) {
+    console.error("Erro no cálculo Stochastic:", e);
+    return { k: 50, d: 50 };
+  }
+}
+
+function calcularWilliams(highs, lows, closes, periodo = CONFIG.PERIODOS.WILLIAMS) {
+  try {
+    if (!Array.isArray(closes) || closes.length < periodo) return 0;
+    const sliceHigh = highs.slice(-periodo);
+    const sliceLow = lows.slice(-periodo);
+    const highestHigh = Math.max(...sliceHigh);
+    const lowestLow = Math.min(...sliceLow);
+    const range = highestHigh - lowestLow;
+    return range > 0 ? ((highestHigh - closes[closes.length - 1]) / range) * -100 : 0;
+  } catch (e) {
+    console.error("Erro no cálculo Williams:", e);
+    return 0;
+  }
+}
+
+function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA,
+                    lenta = CONFIG.PERIODOS.MACD_LENTA,
+                    sinal = CONFIG.PERIODOS.MACD_SINAL) {
+  try {
+    if (!Array.isArray(closes) || closes.length < lenta + sinal) {
+      return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
+    }
+    const emaRapida = calcularMedia.exponencial(closes, rapida);
+    const emaLenta = calcularMedia.exponencial(closes, lenta);
+    if (emaRapida.length < lenta || emaLenta.length < lenta) {
+      return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
+    }
+    const startIdx = lenta - rapida;
+    const macdLinha = emaRapida.slice(startIdx).map((val, idx) => val - emaLenta[idx]);
+    const sinalLinha = calcularMedia.exponencial(macdLinha, sinal);
+    const ultimoMACD = macdLinha[macdLinha.length - 1] || 0;
+    const ultimoSinal = sinalLinha[sinalLinha.length - 1] || 0;
+    return {
+      histograma: ultimoMACD - ultimoSinal,
+      macdLinha: ultimoMACD,
+      sinalLinha: ultimoSinal
+    };
+  } catch (e) {
+    console.error("Erro no cálculo MACD:", e);
+    return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
+  }
+}
+
+function calcularVWAP(dados, periodo = CONFIG.PERIODOS.VWAP) {
+  try {
+    if (!Array.isArray(dados) || dados.length < periodo) return 0;
+    const slice = dados.slice(-periodo);
+    let typicalPriceSum = 0;
+    let volumeSum = 0;
+    for (const vela of slice) {
+      if (!vela.volume || isNaN(vela.volume)) continue;
+      const typicalPrice = (vela.high + vela.low + vela.close) / 3;
+      typicalPriceSum += typicalPrice * vela.volume;
+      volumeSum += vela.volume;
+    }
+    return volumeSum > 0 ? typicalPriceSum / volumeSum : 0;
+  } catch (e) {
+    console.error("Erro no cálculo VWAP:", e);
+    return 0;
+  }
+}
+
+function calcularATR(dados, periodo = CONFIG.PERIODOS.ATR) {
+  try {
+    if (!Array.isArray(dados) || dados.length < periodo + 1) return 0;
+    const trValues = [];
+    for (let i = 1; i < dados.length; i++) {
+      const tr = Math.max(
+        dados[i].high - dados[i].low,
+        Math.abs(dados[i].high - dados[i - 1].close),
+        Math.abs(dados[i].low - dados[i - 1].close)
+      );
+      trValues.push(tr);
+    }
+    return calcularMedia.simples(trValues.slice(-periodo), periodo);
+  } catch (e) {
+    console.error("Erro no cálculo ATR:", e);
+    return 0;
+  }
+}
+
+// =============================================
+// SISTEMA DE DECISÃO
+// =============================================
+function avaliarTendencia(closes, emaCurta, emaLonga, ema200) {
+  if (!Array.isArray(closes) || closes.length < CONFIG.PERIODOS.VELAS_CONFIRMACAO) return "NEUTRA";
+  if (detectarMercadoLateral(closes)) {
+    state.contadorLaterais++;
+    return "LATERAL";
+  }
+  state.contadorLaterais = 0;
+  const ultimoClose = closes[closes.length - 1];
+  const penultimoClose = closes[closes.length - 2];
+  if ((ultimoClose > ema200 && emaCurta < emaLonga) ||
+      (ultimoClose < ema200 && emaCurta > emaLonga)) {
+    return "NEUTRA";
+  }
+  const diffEMAs = emaCurta - emaLonga;
+  const threshold = 0.0010;
+  if (ultimoClose > emaCurta && diffEMAs > threshold && ultimoClose > penultimoClose) {
+    return "FORTE_ALTA";
+  }
+  if (ultimoClose < emaCurta && diffEMAs < -threshold && ultimoClose < penultimoClose) {
+    return "FORTE_BAIXA";
+  }
+  if (ultimoClose > emaCurta && diffEMAs > threshold/2) {
+    return "ALTA";
+  }
+  if (ultimoClose < emaCurta && diffEMAs < -threshold/2) {
+    return "BAIXA";
+  }
+  return "NEUTRA";
+}
+
+function detectarMercadoLateral(closes) {
+  if (!Array.isArray(closes) || closes.length < CONFIG.PERIODOS.ANALISE_LATERAL) return false;
+  const ultimosPrecos = closes.slice(-CONFIG.PERIODOS.ANALISE_LATERAL);
+  const maximo = Math.max(...ultimosPrecos);
+  const minimo = Math.min(...ultimosPrecos);
+  const variacao = ((maximo - minimo) / minimo) * 100;
+  return variacao < CONFIG.LIMIARES.VARIACAO_LATERAL;
+}
+
+function calcularScore(indicadores) {
+  let score = 50;
+
+  // RSI
+  if (indicadores.rsi < CONFIG.LIMIARES.RSI_OVERSOLD) {
+    score += 25 * CONFIG.PESOS.RSI;
+    if (indicadores.tendencia.includes("BAIXA")) score -= 10;
+  } else if (indicadores.rsi > CONFIG.LIMIARES.RSI_OVERBOUGHT) {
+    score -= 25 * CONFIG.PESOS.RSI;
+    if (indicadores.tendencia.includes("ALTA")) score += 10;
+  } else if (indicadores.rsi < 45) {
+    score += 10 * CONFIG.PESOS.RSI;
+  } else if (indicadores.rsi > 55) {
+    score -= 10 * CONFIG.PESOS.RSI;
+  }
+
+  // MACD
+  score += (Math.min(Math.max(indicadores.macd.histograma * 10, -15), 15) * CONFIG.PESOS.MACD);
+
+  // Tendência
+  switch(indicadores.tendencia) {
+    case "FORTE_ALTA": 
+      score += 20 * CONFIG.PESOS.TENDENCIA;
+      if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO * 1.2) score += 5;
+      break;
+    case "ALTA": score += 12 * CONFIG.PESOS.TENDENCIA; break;
+    case "FORTE_BAIXA": 
+      score -= 20 * CONFIG.PESOS.TENDENCIA;
+      if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO * 1.2) score -= 5;
+      break;
+    case "BAIXA": score -= 12 * CONFIG.PESOS.TENDENCIA; break;
+    case "LATERAL": 
+      score -= Math.min(state.contadorLaterais, 12) * CONFIG.PESOS.LATERALIDADE;
+      break;
+  }
+
+  // Volume
+  if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO) {
+    score += (indicadores.tendencia.includes("ALTA") ? 8 : -8) * CONFIG.PESOS.VOLUME;
+  }
+
+  // Stochastic
+  if (indicadores.stoch.k < CONFIG.LIMIARES.STOCH_OVERSOLD &&
+      indicadores.stoch.d < CONFIG.LIMIARES.STOCH_OVERSOLD) {
+    score += 12 * CONFIG.PESOS.STOCH;
+    if (indicadores.tendencia.includes("ALTA")) score -= 5;
+  }
+  if (indicadores.stoch.k > CONFIG.LIMIARES.STOCH_OVERBOUGHT &&
+      indicadores.stoch.d > CONFIG.LIMIARES.STOCH_OVERBOUGHT) {
+    score -= 12 * CONFIG.PESOS.STOCH;
+    if (indicadores.tendencia.includes("BAIXA")) score += 5;
+  }
+
+  // Williams %R
+  if (indicadores.williams < CONFIG.LIMIARES.WILLIAMS_OVERSOLD) {
+    score += 10 * CONFIG.PESOS.WILLIAMS;
+    if (indicadores.rsi < 40) score += 3;
+  }
+  if (indicadores.williams > CONFIG.LIMIARES.WILLIAMS_OVERBOUGHT) {
+    score -= 10 * CONFIG.PESOS.WILLIAMS;
+    if (indicadores.rsi > 60) score -= 3;
+  }
+
+  // VWAP
+  const vwapDesvio = Math.abs(indicadores.close - indicadores.vwap) / Math.max(indicadores.vwap, 0.000001);
+  if (vwapDesvio > CONFIG.LIMIARES.VWAP_DESVIO) {
+    score += (indicadores.close > indicadores.vwap ? 8 : -8) * CONFIG.PESOS.VWAP;
+  }
+
+  // Volatilidade (ATR)
+  if (indicadores.atr > CONFIG.LIMIARES.ATR_LIMIAR) {
+    score += 5 * CONFIG.PESOS.VOLATILIDADE;
+  }
+
+  // Confirmações
+  const confirmacoes = [
+    indicadores.rsi < 40 || indicadores.rsi > 60,
+    Math.abs(indicadores.macd.histograma) > 0.05,
+    indicadores.stoch.k < 30 || indicadores.stoch.k > 70,
+    indicadores.williams < -70 || indicadores.williams > -30,
+    indicadores.tendencia !== "LATERAL",
+    vwapDesvio > CONFIG.LIMIARES.VWAP_DESVIO * 0.8
+  ].filter(Boolean).length;
+  score += confirmacoes * 4 * CONFIG.PESOS.CONFIRMACAO;
+
+  if (state.ultimoSinal) {
+    score += (state.ultimoSinal === "CALL" ? -10 : 10);
+  }
+
+  return Math.min(100, Math.max(0, Math.round(score)));
+}
+
+function determinarSinal(score, tendencia) {
+  if (tendencia === "LATERAL") {
+    return score > 80 ? "CALL" : "ESPERAR";
+  }
+  if (score >= CONFIG.LIMIARES.SCORE_ALTO) {
+    return tendencia.includes("ALTA") ? "CALL" : "PUT";
+  }
+  if (score >= CONFIG.LIMIARES.SCORE_MEDIO) {
+    return tendencia.includes("ALTA") ? "CALL" : "PUT";
+  }
+  return "ESPERAR";
+}
+
+// =============================================
+// BUSCA DE DADOS DO MERCADO CRIPTO (BINANCE)
+// =============================================
+async function obterDadosCripto() {
+  const url = `${CONFIG.HTTP_ENDPOINT}?symbol=${CONFIG.PARES.CRIPTOIDX}&interval=1m&limit=150`;
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+    if (!Array.isArray(data) || data.length === 0) throw new Error("Dados vazios");
+    return data.map(v => ({
+      time: v[0],
+      open: parseFloat(v[1]),
+      high: parseFloat(v[2]),
+      low: parseFloat(v[3]),
+      close: parseFloat(v[4]),
+      volume: parseFloat(v[5])
+    }));
+  } catch (e) {
+    console.error("Erro ao buscar dados:", e);
+    throw new Error("Falha na coleta de dados");
+  }
+}
+
+// =============================================
+// ANÁLISE DO MERCADO
+// =============================================
+async function analisarMercado() {
+  if (state.leituraEmAndamento) return;
+  state.leituraEmAndamento = true;
+  try {
+    const dados = await obterDadosCripto();
+    const closes = dados.map(v => v.close);
+    const highs = dados.map(v => v.high);
+    const lows = dados.map(v => v.low);
+    const volumes = dados.map(v => v.volume);
+
+    const emaCurtaArray = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_CURTA);
+    const emaLongaArray = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_LONGA);
+    const ema200Array = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_200);
+
+    const emaCurta = emaCurtaArray[emaCurtaArray.length - 1] || 0;
+    const emaLonga = emaLongaArray[emaLongaArray.length - 1] || 0;
+    const ema200 = ema200Array[ema200Array.length - 1] || 0;
+
+    const indicadores = {
+      rsi: calcularRSI(closes),
+      macd: calcularMACD(closes),
+      stoch: calcularStochastic(highs, lows, closes),
+      williams: calcularWilliams(highs, lows, closes),
+      vwap: calcularVWAP(dados),
+      atr: calcularATR(dados),
+      close: closes[closes.length - 1],
+      volume: volumes[volumes.length - 1],
+      volumeMedia: calcularMedia.simples(volumes, CONFIG.PERIODOS.SMA_VOLUME) || 1,
+      emaCurta,
+      emaLonga,
+      ema200,
+      tendencia: avaliarTendencia(closes, emaCurta, emaLonga, ema200)
+    };
+
+    const score = calcularScore(indicadores);
+    const sinal = determinarSinal(score, indicadores.tendencia);
+
+    state.ultimoSinal = sinal !== "ESPERAR" ? sinal : state.ultimoSinal;
+    state.ultimoScore = score;
+    state.ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR");
+
+    atualizarInterface(sinal, score);
+
+    const criteriosElement = document.getElementById("criterios");
+    if (criteriosElement) {
+      criteriosElement.innerHTML = `
+        <li>📊 Tendência: ${indicadores.tendencia.replace('_', ' ')} ${
+          indicadores.tendencia.includes("ALTA") ? '🟢' :
+          indicadores.tendencia.includes("BAIXA") ? '🔴' : '🟡'}</li>
+        <li>📉 RSI: ${indicadores.rsi.toFixed(2)} ${
+          indicadores.rsi < CONFIG.LIMIARES.RSI_OVERSOLD ? '🔻' : ''}</li>
+        <li>📊 MACD: ${indicadores.macd.histograma.toFixed(6)} ${
+          indicadores.macd.histograma > 0 ? '🟢' : '🔴'}</li>
+        <li>📈 Stochastic K/D: ${indicadores.stoch.k.toFixed(2)}/${indicadores.stoch.d.toFixed(2)}</li>
+        <li>📊 Williams: ${indicadores.williams.toFixed(2)}</li>
+        <li>💰 Preço: $${indicadores.close.toFixed(2)} ${
+          indicadores.close > indicadores.vwap ? '🟢' : '🔴'}</li>
+        <li>📶 Médias: EMA${CONFIG.PERIODOS.EMA_CURTA} ${indicadores.emaCurta.toFixed(2)} | EMA${CONFIG.PERIODOS.EMA_LONGA} ${indicadores.emaLonga.toFixed(2)} | EMA200 ${indicadores.ema200.toFixed(2)}</li>
+        <li>💹 Volume: ${indicadores.volume.toFixed(2)} vs Média ${indicadores.volumeMedia.toFixed(2)}</li>
+        <li>📌 VWAP: ${indicadores.vwap.toFixed(2)} | ATR: ${indicadores.atr.toFixed(6)}</li>
+      `;
     }
 
-    // Configurações técnicas
-    private static final class TradingConfig {
-        // Parâmetros de mercado
-        static final String TARGET_SYMBOL = "STOCKITY_CRYPTO_INDEX";
-        static final String BTC_DOMINANCE_SYMBOL = "BTCUSDT";
-        static final String LIQUIDITY_SYMBOL = "ETHUSDT";
-        static final CandlestickInterval TIME_FRAME = CandlestickInterval.ONE_MINUTE;
-        
-        // Parâmetros de estratégia
-        static final double MIN_BTC_DOMINANCE = 40.0;
-        static final double MAX_BTC_DOMINANCE = 50.0;
-        static final double FUNDING_RATE_THRESHOLD = -0.02;
-        static final double WHALE_VOLUME_THRESHOLD = 2_000_000.0; // USD
-        static final double VOLATILITY_FACTOR = 0.7;
-        
-        // Indicadores
-        static final int RSI_PERIOD = 14;
-        static final int VWAP_PERIOD = 20;
-        static final int ATR_PERIOD = 14;
-        static final int EMA_SHORT = 9;
-        static final int EMA_LONG = 21;
-        static final int MACD_FAST = 12;
-        static final int MACD_SLOW = 26;
-        static final int MACD_SIGNAL = 9;
-        
-        // Gerenciamento de risco
-        static final double BASE_RISK = 0.02; // 2% por operação
-        static final double MAX_RISK = 0.05;  // 5% máximo
-        static final double MIN_RR_RATIO = 1.8;
-        static final int MAX_CONSECUTIVE_LOSSES = 3;
-    }
+    state.ultimos.unshift(`${state.ultimaAtualizacao} - ${sinal} (${score}%) ${sinal==="CALL"?"🚀":sinal==="PUT"?"💥":"⏳"}`);
+    if (state.ultimos.length > 10) state.ultimos.pop();
 
-    // =============================================
-    // CONEXÃO COM EXCHANGE (BINANCE API)
-    // =============================================
-    private static BinanceApiRestClient restClient;
-    private static BinanceApiWebSocketClient wsClient;
-    
-    private static void initializeClients() {
-        BinanceApiClientFactory factory = BinanceApiClientFactory.newInstance(API_KEY, SECRET_KEY);
-        restClient = factory.newRestClient();
-        wsClient = factory.newWebSocketClient();
-    }
+    const ultimosElement = document.getElementById("ultimos");
+    if (ultimosElement) ultimosElement.innerHTML = state.ultimos.map(i=>`<li>${i}</li>`).join("");
 
-    // =============================================
-    // INDICADORES PROFISSIONAIS (TEMPO REAL)
-    // =============================================
-    private static double calculateRSI(List<Candlestick> candles) {
-        List<Double> closes = candles.stream()
-            .map(c -> Double.parseDouble(c.getClose()))
-            .collect(Collectors.toList());
-        
-        double avgGain = 0.0;
-        double avgLoss = 0.0;
-        
-        // Primeiro cálculo
-        for (int i = 1; i <= TradingConfig.RSI_PERIOD; i++) {
-            double change = closes.get(i) - closes.get(i-1);
-            if (change > 0) avgGain += change;
-            else avgLoss -= change;
-        }
-        
-        avgGain /= TradingConfig.RSI_PERIOD;
-        avgLoss /= TradingConfig.RSI_PERIOD;
-        
-        // Cálculos subsequentes
-        for (int i = TradingConfig.RSI_PERIOD + 1; i < closes.size(); i++) {
-            double change = closes.get(i) - closes.get(i-1);
-            double gain = Math.max(change, 0);
-            double loss = Math.max(-change, 0);
-            
-            avgGain = ((avgGain * (TradingConfig.RSI_PERIOD - 1)) + gain) / TradingConfig.RSI_PERIOD;
-            avgLoss = ((avgLoss * (TradingConfig.RSI_PERIOD - 1)) + loss) / TradingConfig.RSI_PERIOD;
-        }
-        
-        double rs = (avgLoss == 0) ? 100 : avgGain / avgLoss;
-        return 100 - (100 / (1 + rs));
-    }
+    state.tentativasErro = 0;
+  } catch (e) {
+    console.error("Erro na análise:", e);
+    atualizarInterface("ERRO", 0);
+    if (++state.tentativasErro > 3) setTimeout(() => location.reload(), 10000);
+  } finally {
+    state.leituraEmAndamento = false;
+  }
+}
 
-    private static double calculateVWAP(List<Candlestick> candles) {
-        double cumulativeTPV = 0.0;
-        double cumulativeVolume = 0.0;
-        
-        for (Candlestick candle : candles) {
-            double high = Double.parseDouble(candle.getHigh());
-            double low = Double.parseDouble(candle.getLow());
-            double close = Double.parseDouble(candle.getClose());
-            double volume = Double.parseDouble(candle.getVolume());
-            
-            double typicalPrice = (high + low + close) / 3;
-            cumulativeTPV += typicalPrice * volume;
-            cumulativeVolume += volume;
-        }
-        
-        return cumulativeTPV / cumulativeVolume;
+// =============================================
+// CONTROLE DE TEMPO E INICIALIZAÇÃO
+// =============================================
+function sincronizarTimer() {
+  clearInterval(state.intervaloAtual);
+  const agora = Date.now();
+  const delayProximaVela = 60000 - (agora % 60000);
+  state.timer = Math.floor(delayProximaVela / 1000);
+  const elementoTimer = document.getElementById("timer");
+  if (elementoTimer) {
+    elementoTimer.textContent = formatarTimer(state.timer);
+    elementoTimer.style.color = state.timer <= 5 ? 'red' : '';
+  }
+  state.intervaloAtual = setInterval(()=>{
+    state.timer--;
+    if (elementoTimer) {
+      elementoTimer.textContent = formatarTimer(state.timer);
+      elementoTimer.style.color = state.timer <= 5 ? 'red' : '';
     }
+    if (state.timer <= 0) {
+      clearInterval(state.intervaloAtual);
+      analisarMercado().finally(sincronizarTimer);
+    }
+  }, 1000);
+}
 
-    private static double calculateATR(List<Candlestick> candles, int period) {
-        List<Double> trueRanges = new ArrayList<>();
-        
-        for (int i = 1; i < candles.size(); i++) {
-            double prevClose = Double.parseDouble(candles.get(i-1).getClose());
-            double high = Double.parseDouble(candles.get(i).getHigh());
-            double low = Double.parseDouble(candles.get(i).getLow());
-            
-            double tr1 = high - low;
-            double tr2 = Math.abs(high - prevClose);
-            double tr3 = Math.abs(low - prevClose);
-            
-            trueRanges.add(Math.max(tr1, Math.max(tr2, tr3)));
-        }
-        
-        // Média dos primeiros 'period' TRs
-        double atr = trueRanges.subList(0, period).stream()
-            .mapToDouble(Double::doubleValue)
-            .average()
-            .orElse(0.0);
-        
-        // Cálculo suavizado
-        for (int i = period; i < trueRanges.size(); i++) {
-            atr = ((atr * (period - 1)) + trueRanges.get(i)) / period;
-        }
-        
-        return atr;
-    }
+function iniciarAplicativo() {
+  const ids=['comando','score','hora','timer','criterios','ultimos'];
+  const faltando = ids.filter(id=>!document.getElementById(id));
+  if (faltando.length > 0) {
+    console.error("Elementos faltando:", faltando);
+    return;
+  }
+  setInterval(atualizarRelogio, 1000);
+  sincronizarTimer();
+  analisarMercado().finally(sincronizarTimer);
+}
 
-    private static double detectWhaleActivity(String symbol) {
-        OrderBook orderBook = restClient.getOrderBook(symbol, 100);
-        double whaleVolume = 0.0;
-        
-        for (OrderBookEntry ask : orderBook.getAsks()) {
-            double price = Double.parseDouble(ask.getPrice());
-            double qty = Double.parseDouble(ask.getQty());
-            if (price * qty > TradingConfig.WHALE_VOLUME_THRESHOLD) {
-                whaleVolume += price * qty;
-            }
-        }
-        
-        for (OrderBookEntry bid : orderBook.getBids()) {
-            double price = Double.parseDouble(bid.getPrice());
-            double qty = Double.parseDouble(bid.getQty());
-            if (price * qty > TradingConfig.WHALE_VOLUME_THRESHOLD) {
-                whaleVolume += price * qty;
-            }
-        }
-        
-        return whaleVolume;
-    }
-
-    // =============================================
-    // ESTRATÉGIA DELTA FLOW (2025)
-    // =============================================
-    private static TradingSignal evaluateMarket(List<Candlestick> candles) {
-        // 1. Verificar condições macro
-        if (BotState.currentBTCDominance < TradingConfig.MIN_BTC_DOMINANCE || 
-            BotState.currentBTCDominance > TradingConfig.MAX_BTC_DOMINANCE) {
-            return TradingSignal.WAIT;
-        }
-        
-        // 2. Coletar dados de mercado
-        double rsi = calculateRSI(candles);
-        double vwap = calculateVWAP(candles);
-        double atr = calculateATR(candles, TradingConfig.ATR_PERIOD);
-        double whaleVolume = detectWhaleActivity(TradingConfig.LIQUIDITY_SYMBOL);
-        double lastClose = Double.parseDouble(candles.get(candles.size()-1).getClose());
-        
-        // 3. Avaliar condições de entrada
-        boolean longCondition = 
-            rsi < 35 &&
-            lastClose > vwap &&
-            BotState.fundingRate < TradingConfig.FUNDING_RATE_THRESHOLD &&
-            whaleVolume > 0;
-        
-        boolean shortCondition = 
-            rsi > 65 &&
-            lastClose < vwap &&
-            BotState.fundingRate > Math.abs(TradingConfig.FUNDING_RATE_THRESHOLD) &&
-            whaleVolume > 0;
-        
-        // 4. Gerenciamento de risco dinâmico
-        double positionSize = calculatePositionSize(atr, lastClose);
-        
-        // 5. Gerar sinal
-        if (longCondition) {
-            return new TradingSignal(TradingSignal.SignalType.LONG, positionSize, atr);
-        } else if (shortCondition) {
-            return new TradingSignal(TradingSignal.SignalType.SHORT, positionSize, atr);
-        }
-        
-        return TradingSignal.WAIT;
-    }
-
-    // =============================================
-    // GERENCIAMENTO DE RISCO AVANÇADO
-    // =============================================
-    private static double calculatePositionSize(double atr, double entryPrice) {
-        // Ajustar risco baseado em desempenho recente
-        double riskFactor = TradingConfig.BASE_RISK;
-        if (BotState.consecutiveLosses > 0) {
-            riskFactor = Math.max(
-                TradingConfig.BASE_RISK * 0.5, 
-                TradingConfig.BASE_RISK / BotState.consecutiveLosses
-            );
-        }
-        
-        // Limitar risco máximo
-        riskFactor = Math.min(riskFactor, TradingConfig.MAX_RISK);
-        
-        // Calcular tamanho da posição
-        double dollarRisk = BotState.equity * riskFactor;
-        double positionSize = dollarRisk / (atr * TradingConfig.MIN_RR_RATIO);
-        
-        // Ajustar para preço do ativo
-        return positionSize / entryPrice;
-    }
-
-    private static void executeTrade(TradingSignal signal, double currentPrice) {
-        // 1. Calcular stop loss e take profit
-        double stopLoss = signal.signalType == TradingSignal.SignalType.LONG ?
-            currentPrice - (signal.atr * TradingConfig.VOLATILITY_FACTOR) :
-            currentPrice + (signal.atr * TradingConfig.VOLATILITY_FACTOR);
-            
-        double takeProfit = signal.signalType == TradingSignal.SignalType.LONG ?
-            currentPrice + (signal.atr * TradingConfig.MIN_RR_RATIO * TradingConfig.VOLATILITY_FACTOR) :
-            currentPrice - (signal.atr * TradingConfig.MIN_RR_RATIO * TradingConfig.VOLATILITY_FACTOR);
-        
-        // 2. Executar ordem (implementação real)
-        try {
-            // Ordem de entrada
-            placeOrder(
-                TradingConfig.TARGET_SYMBOL,
-                signal.signalType == TradingSignal.SignalType.LONG ? "BUY" : "SELL",
-                signal.positionSize,
-                currentPrice
-            );
-            
-            // Ordens de proteção
-            placeStopOrder(
-                TradingConfig.TARGET_SYMBOL,
-                signal.signalType == TradingSignal.SignalType.LONG ? "SELL" : "BUY",
-                signal.positionSize,
-                stopLoss
-            );
-            
-            placeTakeProfitOrder(
-                TradingConfig.TARGET_SYMBOL,
-                signal.signalType == TradingSignal.SignalType.LONG ? "SELL" : "BUY",
-                signal.positionSize,
-                takeProfit
-            );
-            
-            // Atualizar estado
-            BotState.currentPosition = signal.signalType == TradingSignal.SignalType.LONG ? 
-                Position.LONG : Position.SHORT;
-            BotState.lastEntryPrice = currentPrice;
-            
-        } catch (Exception e) {
-            // Tratamento de erro na execução
-            System.err.println("Erro na execução da ordem: " + e.getMessage());
-        }
-    }
-
-    // =============================================
-    // MONITORAMENTO DE MERCADO EM TEMPO REAL
-    // =============================================
-    private static void startMarketMonitoring() {
-        // Monitorar índice principal
-        wsClient.onCandlestickEvent(TradingConfig.TARGET_SYMBOL.toLowerCase(), TradingConfig.TIME_FRAME, response -> {
-            List<Candlestick> candles = restClient.getCandlestickBars(
-                TradingConfig.TARGET_SYMBOL, 
-                TradingConfig.TIME_FRAME,
-                100
-            );
-            
-            if (BotState.currentPosition == Position.NONE) {
-                TradingSignal signal = evaluateMarket(candles);
-                if (signal != TradingSignal.WAIT) {
-                    double currentPrice = Double.parseDouble(
-                        candles.get(candles.size()-1).getClose()
-                    );
-                    executeTrade(signal, currentPrice);
-                }
-            }
-        });
-        
-        // Monitorar dominância do BTC
-        wsClient.onCandlestickEvent(TradingConfig.BTC_DOMINANCE_SYMBOL.toLowerCase(), 
-            CandlestickInterval.HOURLY, response -> {
-                
-            List<Candlestick> btcCandles = restClient.getCandlestickBars(
-                TradingConfig.BTC_DOMINANCE_SYMBOL, 
-                CandlestickInterval.HOURLY,
-                TradingConfig.BTC_DOM_SAMPLE
-            );
-            
-            double totalVolume = 0.0;
-            double volumeWeightedDominance = 0.0;
-            
-            for (Candlestick candle : btcCandles) {
-                double volume = Double.parseDouble(candle.getVolume());
-                double dominance = Double.parseDouble(candle.getClose());
-                
-                totalVolume += volume;
-                volumeWeightedDominance += dominance * volume;
-            }
-            
-            BotState.currentBTCDominance = volumeWeightedDominance / totalVolume;
-        });
-        
-        // Monitorar funding rate
-        wsClient.onFundingRateEvent(TradingConfig.TARGET_SYMBOL.toLowerCase(), response -> {
-            BotState.fundingRate = Double.parseDouble(response.getFundingRate());
-        });
-    }
-
-    // =============================================
-    // EXECUÇÃO DE ORDENS (INTEGRAÇÃO REAL)
-    // =============================================
-    private static void placeOrder(String symbol, String side, double quantity, double price) {
-        // Implementação real da API Binance
-        System.out.printf("[ORDEM EXECUTADA] %s %s %.6f @ %.4f%n", 
-            side, symbol, quantity, price);
-    }
-    
-    private static void placeStopOrder(String symbol, String side, double quantity, double stopPrice) {
-        // Implementação real de stop loss
-        System.out.printf("[STOP LOSS] %s %s %.6f @ %.4f%n", 
-            side, symbol, quantity, stopPrice);
-    }
-    
-    private static void placeTakeProfitOrder(String symbol, String side, double quantity, double takeProfitPrice) {
-        // Implementação real de take profit
-        System.out.printf("[TAKE PROFIT] %s %s %.6f @ %.4f%n", 
-            side, symbol, quantity, takeProfitPrice);
-    }
-
-    // =============================================
-    // CLASSES AUXILIARES
-    // =============================================
-    enum Position {
-        LONG, SHORT, NONE
-    }
-    
-    static class TradingSignal {
-        enum SignalType { LONG, SHORT }
-        
-        final SignalType signalType;
-        final double positionSize; // Em unidades do ativo
-        final double atr; // Valor do ATR no momento do sinal
-        
-        static final TradingSignal WAIT = new TradingSignal();
-        
-        private TradingSignal() {
-            this.signalType = null;
-            this.positionSize = 0;
-            this.atr = 0;
-        }
-        
-        public TradingSignal(SignalType signalType, double positionSize, double atr) {
-            this.signalType = signalType;
-            this.positionSize = positionSize;
-            this.atr = atr;
-        }
-        
-        public boolean isWait() {
-            return this == WAIT;
-        }
-    }
-
-    // =============================================
-    // INICIALIZAÇÃO DO SISTEMA
-    // =============================================
-    public static void main(String[] args) {
-        // 1. Validar credenciais
-        if (API_KEY == null || SECRET_KEY == null || API_KEY.isEmpty() || SECRET_KEY.isEmpty()) {
-            System.err.println("Credenciais da API não configuradas!");
-            System.exit(1);
-        }
-        
-        // 2. Inicializar conexões
-        initializeClients();
-        
-        // 3. Carregar dados históricos iniciais
-        initializeHistoricalData();
-        
-        // 4. Iniciar monitoramento em tempo real
-        startMarketMonitoring();
-        
-        System.out.println("Sistema de trading iniciado com sucesso!");
-    }
+if(document.readyState === "complete") {
+  iniciarAplicativo();
+} else {
+  document.addEventListener("DOMContentLoaded", iniciarAplicativo);
 }
