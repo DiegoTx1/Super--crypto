@@ -1,289 +1,175 @@
-// =============================================
-// CONFIGURAÇÕES GLOBAIS (ATUALIZADAS 2025)
-// =============================================
-const state = {
-  ultimos: [],
-  timer: 60,
-  ultimaAtualizacao: "",
-  leituraEmAndamento: false,
-  intervaloAtual: null,
-  tentativasErro: 0,
-  ultimoSinal: null,
-  ultimoScore: 0,
-  contadorLaterais: 0,
-  websocket: null,
-  apiKeys: ["demo", "backup_key_2025"],
-  currentApiKeyIndex: 0,
-  marketOpen: true,
-  sentimentData: null,
-  liquidityMap: new Map(), // Novo mapa para dados de liquidez
-  volatilityIndex: 0 // Índice de volatilidade atual
-};
+// =============================================  
+// CONFIGURAÇÕES GLOBAIS (STOCKITY - CRYPTO IDX)  
+// =============================================  
+const state = {  
+  ultimos: [],  
+  timer: 60,  
+  ultimaAtualizacao: "",  
+  leituraEmAndamento: false,  
+  intervaloAtual: null,  
+  tentativasErro: 0,  
+  ultimoSinal: null,  
+  ultimoScore: 0,  
+  contadorLaterais: 0,  
+  marketOpen: true,  
+  sentimentData: null,  
+  liquidityZones: { support: [], resistance: [] }  
+};  
 
-const CONFIG = {
-  API_ENDPOINTS: [
-    "https://api.twelvedata.com/v5", 
-    "https://api.binance.com/api/v5",
-    "https://api.cryptoquant.com/v3"
-  ],
-  WS_ENDPOINTS: [
-    "wss://stream.binance.com:9443/ws",
-    "wss://fstream.binance.com/ws"
-  ],
-  NEWS_API: "https://cryptonews-api.com/v2",
-  
-  PARES: {
-    BTCUSDT: "BTC/USDT",
-    ETHUSDT: "ETH/USDT",
-    SOLUSDT: "SOL/USDT",
-    XRPUSDT: "XRP/USDT"
-  },
-  
-  PERIODOS: {
-    // Períodos otimizados para 2025
-    RSI: 14,
-    VWMO: 21, // Novo indicador
-    LH_WINDOW: 50, // Janela para heatmap de liquidez
-    QFE_PERIOD: 34, // Período para Quantum Fractal Energy
-    MLS_WINDOW: 8, // Janela para análise de sentimento
-    // ... (mantido os outros períodos)
-  },
-  
-  LIMIARES: {
-    // Limiares atualizados para 2025
-    SCORE_ALTO: 85,
-    SCORE_MEDIO: 70,
-    VWMO_BUY: 0.15,
-    VWMO_SELL: -0.15,
-    QFE_THRESHOLD: 0.7,
-    // ... (mantido outros limiares)
-  },
-  
-  PESOS: {
-    // Pesos atualizados
-    VWMO: 2.2,
-    QFE: 1.8,
-    MLS: 1.5,
-    LH: 2.0,
-    // ... (ajustado outros pesos)
-  },
-  
-  RISCO: {
-    // Gestão de risco aprimorada
-    VOLATILITY_ADJUSTMENT: true,
-    MAX_RISCO_POR_OPERACAO: 0.008,
-    R_R_MINIMO: 2.5,
-    // ... (mantido outros)
-  }
-};
+const CONFIG = {  
+  // Dados de Mercado (Binance API Free)  
+  BINANCE_API: "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=100",  
+  SENTIMENT_API: "https://api.santiment.net/v1/sentiment?symbol=BTC&free_key=true",  
 
-// =============================================
-// NOVOS INDICADORES (2025)
-// =============================================
+  // Configurações de Trading  
+  SYMBOL: "CRYPTO.IDX",  
+  VALOR_POR_OPERACAO: 50, // Valor em $ por trade  
 
-// Volume-Weighted Momentum Oscillator
-function calcularVWMO(closes, volumes, periodo = CONFIG.PERIODOS.VWMO) {
-  if (closes.length < periodo || volumes.length < periodo) return 0;
-  
-  const momentum = closes.slice(-periodo).map((c, i, arr) => 
-    i > 0 ? (c - arr[i-1]) / arr[i-1] : 0
-  );
-  
-  const volumeSum = volumes.slice(-periodo).reduce((a, b) => a + b, 0);
-  const weightedMomentum = momentum.reduce((sum, m, i) => 
-    sum + m * (volumes[volumes.length - periodo + i] / volumeSum), 0);
-  
-  return weightedMomentum;
-}
+  // EMOJIS (Mantidos do seu original)  
+  EMOJIS: {  
+    CALL: "📈",  
+    PUT: "📉",  
+    ESPERAR: "✋",  
+    ERRO: "❗",  
+    ALTA: "🟢",  
+    BAIXA: "🔴",  
+    LATERAL: "🟡",  
+    VOLUME_ALTO: "🔊",  
+    VOLUME_BAIXO: "🔈"  
+  },  
 
-// Quantum Fractal Energy
-function calcularQFE(highs, lows, closes, periodo = CONFIG.PERIODOS.QFE_PERIOD) {
-  if (closes.length < periodo) return 0;
-  
-  const fractalEnergy = [];
-  for (let i = periodo; i < closes.length; i++) {
-    const range = Math.max(...highs.slice(i-periodo, i)) - Math.min(...lows.slice(i-periodo, i));
-    const energy = range > 0 ? (closes[i] - closes[i-periodo]) / range : 0;
-    fractalEnergy.push(Math.abs(energy));
-  }
-  
-  return fractalEnergy.length > 0 ? 
-    fractalEnergy.reduce((a, b) => a + b, 0) / fractalEnergy.length : 0;
-}
+  // PERIODOS & LIMIARES  
+  PERIODOS: {  
+    RSI: 14,  
+    MACD_RAPIDA: 12,  
+    MACD_LONGA: 26,  
+    EMA_CURTA: 9,  
+    EMA_LONGA: 21  
+  },  
+  LIMIARES: {  
+    RSI_OVERBOUGHT: 70,  
+    RSI_OVERSOLD: 30,  
+    SCORE_ALTO: 80,  
+    SCORE_MEDIO: 65  
+  }  
+};  
 
-// Liquidity Heatmap
-function atualizarLiquidityHeatmap(orders) {
-  // Simulação - na prática viria de API de fluxo de ordens
-  const levels = {};
-  orders.forEach(order => {
-    const priceLevel = Math.round(order.price * 100) / 100;
-    levels[priceLevel] = (levels[priceLevel] || 0) + order.quantity;
-  });
-  
-  state.liquidityMap = new Map(Object.entries(levels)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10));
-}
+// =============================================  
+// FUNÇÕES DE ANÁLISE TÉCNICA (ATUALIZADAS 2025)  
+// =============================================  
+function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {  
+  if (closes.length < periodo) return 50;  
 
-// Machine Learning Sentiment
-async function obterSentimento() {
-  try {
-    const response = await fetch(`${CONFIG.NEWS_API}/sentiment`);
-    const data = await response.json();
-    return data.sentimentScore || 0;
-  } catch (e) {
-    console.error("Erro ao obter sentimento:", e);
-    return 0;
-  }
-}
+  let ganhos = 0;  
+  let perdas = 0;  
 
-// =============================================
-// SISTEMA DE DECISÃO ATUALIZADO (2025)
-// =============================================
+  for (let i = 1; i <= periodo; i++) {  
+    const diferenca = closes[i] - closes[i - 1];  
+    if (diferenca > 0) ganhos += diferenca;  
+    else perdas += Math.abs(diferenca);  
+  }  
 
-function calcularScore(indicadores) {
-  let score = 50;
-  
-  // Fatores tradicionais (ajustados)
-  score += (indicadores.rsi - 50) * 0.3 * CONFIG.PESOS.RSI;
-  
-  // Novo VWMO
-  if (indicadores.vwmo > CONFIG.LIMIARES.VWMO_BUY) {
-    score += 25 * CONFIG.PESOS.VWMO;
-  } else if (indicadores.vwmo < CONFIG.LIMIARES.VWMO_SELL) {
-    score -= 25 * CONFIG.PESOS.VWMO;
-  }
-  
-  // Quantum Fractal Energy
-  if (indicadores.qfe > CONFIG.LIMIARES.QFE_THRESHOLD) {
-    score += 20 * CONFIG.PESOS.QFE * (indicadores.tendencia.includes("ALTA") ? 1 : -1);
-  }
-  
-  // Liquidity Heatmap
-  const currentPrice = indicadores.close;
-  let liquidityBias = 0;
-  state.liquidityMap.forEach((vol, price) => {
-    const distance = (currentPrice - parseFloat(price)) / currentPrice;
-    if (Math.abs(distance) < 0.02) { // 2% do preço atual
-      liquidityBias += vol * (price < currentPrice ? 1 : -1);
-    }
-  });
-  score += Math.min(Math.max(liquidityBias * 0.1, -15), 15) * CONFIG.PESOS.LH;
-  
-  // Machine Learning Sentiment
-  score += indicadores.sentiment * 10 * CONFIG.PESOS.MLS;
-  
-  // ... (outros fatores mantidos, mas com pesos ajustados)
-  
-  return Math.min(100, Math.max(0, Math.round(score)));
-}
+  const RS = ganhos / perdas;  
+  return 100 - (100 / (1 + RS));  
+}  
 
-// =============================================
-// INTERFACE ATUALIZADA (2025)
-// =============================================
+function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA, lenta = CONFIG.PERIODOS.MACD_LONGA) {  
+  if (closes.length < lenta) return { histograma: 0 };  
 
-function atualizarInterface(sinal, score, indicadores) {
-  const emojiMap = {
-    CALL: "🚀🌕",
-    PUT: "🐻🌊",
-    ESPERAR: "🔄",
-    ERRO: "❌"
-  };
-  
-  const comandoElement = document.getElementById("comando");
-  if (comandoElement) {
-    comandoElement.innerHTML = `${sinal} ${emojiMap[sinal] || ""} <span class="pulse-animation">${score}%</span>`;
-    comandoElement.className = sinal.toLowerCase();
-  }
-  
-  // Novo painel de liquidez
-  const liquidityElement = document.getElementById("liquidity-panel");
-  if (liquidityElement) {
-    let html = "<h3>🏦 Mapa de Liquidez</h3><ul>";
-    state.liquidityMap.forEach((vol, price) => {
-      html += `<li>$${price}: ${vol.toFixed(2)} BTC</li>`;
-    });
-    liquidityElement.innerHTML = html + "</ul>";
-  }
-  
-  // Novo indicador de sentimento
-  const sentimentElement = document.getElementById("sentiment-indicator");
-  if (sentimentElement) {
-    const sentiment = indicadores.sentiment;
-    const sentimentClass = sentiment > 0.6 ? "positive" : sentiment < 0.4 ? "negative" : "neutral";
-    sentimentElement.innerHTML = `📊 Sentimento: <span class="${sentimentClass}">${(sentiment*100).toFixed(0)}% ${sentiment > 0.6 ? "😊" : sentiment < 0.4 ? "😟" : "😐"}</span>`;
-  }
-}
+  const emaRapida = closes.slice(-rapida).reduce((a, b) => a + b, 0) / rapida;  
+  const emaLenta = closes.slice(-lenta).reduce((a, b) => a + b, 0) / lenta;  
+  return { histograma: emaRapida - emaLenta };  
+}  
 
-// =============================================
-// CÓDIGO COMPLETO (restante mantido com ajustes)
-// =============================================
+// =============================================  
+// AUTOMAÇÃO DA STOCKITY (USANDO PUPPETEER)  
+// =============================================  
+const puppeteer = require('puppeteer');  
 
-// ... (o restante do seu código original é mantido, mas com as adaptações para incluir os novos indicadores)
+async function executarOrdemStockity(sinal) {  
+  const browser = await puppeteer.launch({ headless: false });  
+  const page = await browser.newPage();  
 
-// Função principal de análise atualizada
-async function analisarMercado() {
-  if (state.leituraEmAndamento) return;
-  state.leituraEmAndamento = true;
-  
-  try {
-    const [dados, sentiment] = await Promise.all([
-      obterDadosCripto(),
-      obterSentimento()
-    ]);
-    
-    // Processar dados e calcular indicadores
-    const velaAtual = dados[dados.length - 1];
-    const closes = dados.map(v => v.close);
-    const highs = dados.map(v => v.high);
-    const lows = dados.map(v => v.low);
-    const volumes = dados.map(v => v.volume);
-    
-    // Calcular todos os indicadores
-    const indicadores = {
-      // ... (indicadores originais)
-      vwmo: calcularVWMO(closes, volumes),
-      qfe: calcularQFE(highs, lows, closes),
-      sentiment: sentiment,
-      // ... (outros indicadores)
-    };
-    
-    // Atualizar mapa de liquidez (simulado)
-    atualizarLiquidityHeatmap([
-      { price: velaAtual.close * 0.98, quantity: velaAtual.volume * 0.2 },
-      { price: velaAtual.close * 1.02, quantity: velaAtual.volume * 0.3 },
-      // ... (dados simulados)
-    ]);
-    
-    const score = calcularScore(indicadores);
-    const sinal = determinarSinal(score, indicadores.tendencia);
-    
-    // Atualizar interface com novos elementos
-    atualizarInterface(sinal, score, indicadores);
-    
-    // ... (restante do processamento)
-    
-  } catch (e) {
-    console.error("Erro na análise:", e);
-    atualizarInterface("ERRO", 0, {});
-  } finally {
-    state.leituraEmAndamento = false;
-  }
-}
+  try {  
+    // Login  
+    await page.goto('https://stockity.com/login');  
+    await page.type('#email', 'SEU_EMAIL');  
+    await page.type('#password', 'SUA_SENHA');  
+    await page.click('#login-button');  
+    await page.waitForNavigation();  
 
-// Inicialização com novos módulos
-function iniciarAplicativo() {
-  // ... (código original)
-  
-  // Adicionar novos elementos de UI
-  document.getElementById("dashboard").innerHTML += `
-    <div id="liquidity-panel" class="panel"></div>
-    <div id="sentiment-indicator" class="indicator"></div>
-    <div id="quantum-indicator">
-      <div class="qfe-bar"></div>
-      <span>⚛️ Energia Fractal</span>
-    </div>
-  `;
-  
-  // ... (restante da inicialização)
-}
+    // Operação  
+    await page.goto('https://stockity.com/trade/crypto-idx');  
+    await page.click(`button[data-direction="${sinal.toLowerCase()}"]`);  
+    await page.type('#amount-input', CONFIG.VALOR_POR_OPERACAO.toString());  
+    await page.click('#confirm-trade');  
+
+    console.log(`✅ Ordem ${sinal} executada! ${CONFIG.EMOJIS[sinal]}`);  
+  } catch (error) {  
+    console.error(`❌ Erro: ${error.message}`);  
+  } finally {  
+    await browser.close();  
+  }  
+}  
+
+// =============================================  
+// LÓGICA PRINCIPAL DE TRADING  
+// =============================================  
+async function analisarMercado() {  
+  if (state.leituraEmAndamento) return;  
+  state.leituraEmAndamento = true;  
+
+  try {  
+    // 1. Busca dados do mercado  
+    const response = await fetch(CONFIG.BINANCE_API);  
+    const dados = await response.json();  
+    const closes = dados.map(candle => parseFloat(candle[4]));  
+
+    // 2. Calcula indicadores  
+    const rsi = calcularRSI(closes);  
+    const macd = calcularMACD(closes);  
+    const emaCurta = closes.slice(-CONFIG.PERIODOS.EMA_CURTA).reduce((a, b) => a + b, 0) / CONFIG.PERIODOS.EMA_CURTA;  
+    const emaLonga = closes.slice(-CONFIG.PERIODOS.EMA_LONGA).reduce((a, b) => a + b, 0) / CONFIG.PERIODOS.EMA_LONGA;  
+
+    // 3. Gera sinal  
+    let sinal = "ESPERAR";  
+    let score = 50;  
+
+    if (rsi < CONFIG.LIMIARES.RSI_OVERSOLD && macd.histograma > 0 && emaCurta > emaLonga) {  
+      sinal = "CALL";  
+      score = 85;  
+    } else if (rsi > CONFIG.LIMIARES.RSI_OVERBOUGHT && macd.histograma < 0 && emaCurta < emaLonga) {  
+      sinal = "PUT";  
+      score = 85;  
+    }  
+
+    // 4. Atualiza interface  
+    state.ultimoSinal = sinal;  
+    state.ultimoScore = score;  
+    state.ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR");  
+
+    console.log(`📊 ${state.ultimaAtualizacao} - ${sinal} (${score}%) ${CONFIG.EMOJIS[sinal]}`);  
+
+    // 5. Executa ordem se confiança alta  
+    if (score >= CONFIG.LIMIARES.SCORE_ALTO && sinal !== "ESPERAR") {  
+      await executarOrdemStockity(sinal);  
+    }  
+
+  } catch (error) {  
+    console.error(`❌ Erro na análise: ${error.message}`);  
+  } finally {  
+    state.leituraEmAndamento = false;  
+  }  
+}  
+
+// =============================================  
+// INICIALIZAÇÃO DO ROBÔ  
+// =============================================  
+function iniciarRobo() {  
+  console.log("🤖 Robô Stockity CRYPTO.IDX Iniciado!");  
+  analisarMercado();  
+  setInterval(analisarMercado, 60000); // Analisa a cada 1 minuto  
+}  
+
+// Inicia o robô  
+iniciarRobo();
