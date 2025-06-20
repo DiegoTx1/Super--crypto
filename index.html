@@ -1,34 +1,25 @@
-<!-- Atualizar o painel de sinais -->
-<div class="signal-card">
-  <h2>SINAL ATUAL</h2>
-  <div class="signal-display">
-    <span id="comando">ANALISANDO</span>
-    <div id="confidence-gauge"></div>
-    <span id="score">0%</span>
-  </div>
-  <!-- Indicador visual de sinal ativo -->
-  <div id="signal-indicator"></div>
-  
-  <div class="signal-metrics">
-    <div class="metric">
-      <span>Volatilidade</span>
-      <div class="progress-bar"><div id="volatility-bar" style="width: 0%"></div></div>
-    </div>
-    <div class="metric">
-      <span>Tendência Confirmada</span>
-      <div class="progress-bar"><div id="trend-bar" style="width: 0%"></div></div>
-    </div>
-  </div>
+<!-- Adicione isso no corpo do HTML -->
+<div class="status-bar">
+  <span id="exchange-status">Binance: <span class="connected">● CONECTADO</span></span>
+  <span id="sync-status">Sincronizado: <span id="sync-indicator">●</span></span>
 </div>
 
-<!-- Adicionar script de inicialização -->
-<script>
-  // Forçar atualização ao recarregar
-  window.addEventListener('load', () => {
-    if (!localStorage.getItem('quantexInitialized')) {
-      localStorage.setItem('quantexInitialized', 'true');
-      localStorage.removeItem('lastAnalysisTime');
-      location.reload();
-    }
-  });
-</script>
+<!-- Atualize o painel de controle -->
+<div class="execution-panel">
+  <h3>CONTROLE DE EXECUÇÃO</h3>
+  <div class="counters">
+    <div>
+      <span>Próxima análise:</span>
+      <span id="timer">--</span>s
+    </div>
+    <div>
+      <span>Último sinal:</span>
+      <span id="hora">--:--:--</span>
+    </div>
+  </div>
+  <div class="buttons">
+    <button id="btn-win" class="win-btn" onclick="registrar('WIN')">WIN</button>
+    <button id="btn-loss" class="loss-btn" onclick="registrar('LOSS')">LOSS</button>
+    <button id="btn-pause" onclick="togglePause()">PAUSAR</button>
+  </div>
+</div>
