@@ -1,4 +1,4 @@
-// =============================================
+//=============================================
 // CONFIGURAÇÕES GLOBAIS (ATUALIZADAS PARA MERCADO REAL)
 // =============================================
 const state = {
@@ -20,7 +20,7 @@ const state = {
 
 const CONFIG = {
   API_ENDPOINTS: ["https://api.binance.com/api/v3"],
-  WS_ENDPOINT: "wss://fstream.binance.com/ws/btcusdt@kline_1m", // CORREÇÃO: Endpoint atualizado
+  WS_ENDPOINT: "wss://stream.binance.com:9443/ws/btcusdt@kline_1m",
   PARES: {
     CRYPTO_IDX: "BTCUSDT"
   },
@@ -169,40 +169,30 @@ function calcularBollingerBands(closes, periodo = CONFIG.PERIODOS.BOLLINGER, des
   };
 }
 
-// CORREÇÃO: Função RSI corrigida
 function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {
-  if (closes.length < periodo + 1) return 50;
+  if (!Array.isArray(closes) || closes.length < periodo + 1) return 50;
   
-  let gains = 0;
-  let losses = 0;
+  let gains = 0, losses = 0;
   
-  // Cálculo inicial
   for (let i = 1; i <= periodo; i++) {
     const diff = closes[i] - closes[i - 1];
-    if (diff >= 0) gains += diff;
-    else losses -= diff;
+    if (diff > 0) gains += diff;
+    else losses += Math.abs(diff);
   }
-  
+
   let avgGain = gains / periodo;
-  let avgLoss = losses / periodo;
-  
-  // Cálculos subsequentes
+  let avgLoss = Math.max(losses / periodo, 0.000001);
+
   for (let i = periodo + 1; i < closes.length; i++) {
     const diff = closes[i] - closes[i - 1];
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? Math.abs(diff) : 0;
     
-    if (diff >= 0) {
-      avgGain = (avgGain * (periodo - 1) + diff) / periodo;
-      avgLoss = (avgLoss * (periodo - 1)) / periodo;
-    } else {
-      avgGain = (avgGain * (periodo - 1)) / periodo;
-      avgLoss = (avgLoss * (periodo - 1) - diff) / periodo;
-    }
+    avgGain = (avgGain * (periodo - 1) + gain) / periodo;
+    avgLoss = (avgLoss * (periodo - 1) + loss) / periodo;
   }
-  
-  // Evitar divisão por zero
-  if (avgLoss === 0) return avgGain === 0 ? 50 : 100;
-  
-  const rs = avgGain / avgLoss;
+
+  const rs = avgGain / Math.max(avgLoss, 0.000001);
   return 100 - (100 / (1 + rs));
 }
 
@@ -525,12 +515,7 @@ async function analisarMercado() {
   state.leituraEmAndamento = true;
   
   try {
-    // CORREÇÃO: Verifica se tem dados suficientes
-    if (state.dadosCrypto.length < 200) {
-      state.dadosCrypto = await obterDadosCrypto();
-    }
-    
-    const dados = state.dadosCrypto;
+    const dados = state.dadosCrypto.length > 0 ? state.dadosCrypto : await obterDadosCrypto();
     if (!dados || dados.length === 0) throw new Error("Dados vazios");
     
     const velaAtual = dados[dados.length - 1];
@@ -637,11 +622,6 @@ function conectarWebSocket() {
   
   state.websocket = new WebSocket(CONFIG.WS_ENDPOINT);
   
-  // CORREÇÃO: Adicionado evento onopen
-  state.websocket.onopen = () => {
-    console.log("Conexão WebSocket estabelecida com sucesso!");
-  };
-  
   state.websocket.onmessage = (event) => {
     const data = JSON.parse(event.data);
     if (data.k) {
@@ -668,12 +648,6 @@ function conectarWebSocket() {
       if (state.dadosCrypto.length > 200) state.dadosCrypto.shift();
       analisarMercado();
     }
-  };
-  
-  // CORREÇÃO: Adicionado tratamento para reconexão
-  state.websocket.onclose = () => {
-    console.log("Conexão WebSocket fechada. Reconectando...");
-    setTimeout(conectarWebSocket, 3000);
   };
   
   state.websocket.onerror = (error) => {
@@ -921,16 +895,8 @@ function iniciarAplicativo() {
   criarInterface();
   setInterval(atualizarRelogio, 1000);
   sincronizarTimer();
-  
-  // CORREÇÃO: Obter dados antes de conectar WebSocket
-  obterDadosCrypto().then(() => {
-    conectarWebSocket();
-    analisarMercado();
-  }).catch(error => {
-    console.error("Erro inicial:", error);
-    atualizarInterface("ERRO", 0);
-    setTimeout(iniciarAplicativo, 5000);
-  });
+  conectarWebSocket();
+  analisarMercado();
 }
 
 if(document.readyState==="complete") iniciarAplicativo();
