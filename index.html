@@ -8,40 +8,56 @@
 <body>
   <div class="container">
     <h1>TX1 PRO 💹👨🏽‍💻</h1>
+
     <div class="painel-central">
+      <!-- Coluna Esquerda -->
       <div class="coluna-esquerda">
         <p>Comando Atual: <span id="comando">ESPERAR</span></p>
-        <p>Score: <span id="score">--%</span></p>
-        <p>Próxima Análise: <span id="timer">60</span>s</p>
+        <p>Pontuação: <span id="score">--%</span></p>
+        <p>Análise da Próxima: <span id="timer">60</span>s</p>
         <p>Última Atualização: <span id="hora">--:--:--</span></p>
+
         <div>
           <h3>Critérios</h3>
           <ul id="criterios"></ul>
         </div>
-        <div class="trade-buttons">
-          <button id="btn-win">WIN</button>
-          <button id="btn-loss">LOSS</button>
-          <p>Performance: <span id="performance">0%</span></p>
+
+        <div class="botões-de-negociação">
+          <button id="btn-win">GANHAR</button>
+          <button id="btn-loss">PERDA</button>
+          <p>Desempenho: <span id="performance">0%</span></p>
         </div>
       </div>
+
+      <!-- Coluna Direita -->
       <div class="coluna-direita">
         <h3>Mercado</h3>
-        <ul id="market-data">
-          <li>BTC Dominance: <span id="btc-dominance">--%</span></li>
-          <li>Funding Rate: <span id="funding">--%</span></li>
-          <li>Whale Activity: <span id="whale">--</span></li>
+        <ul id="dados-de-mercado">
+          <li>Dominância do BTC: <span id="btc-dominance">--%</span></li>
+          <li>Taxa de Financiamento: <span id="funding">--%</span></li>
+          <li>Atividade das Baleias: <span id="whale">--</span></li>
         </ul>
+
         <h3>Ordens</h3>
         <ul id="ordens"></ul>
       </div>
     </div>
+
+    <!-- Gráfico TradingView -->
     <div class="chart-container">
-      <iframe class="grafico" src="https://www.tradingview.com/chart/?symbol=BINANCE:BTCUSDT" 
-              width="100%" height="500" frameborder="0"></iframe>
+      <iframe class="grafico" 
+              src="https://www.tradingview.com/chart/?symbol=BINANCE:BTCUSDT" 
+              width="100%" 
+              height="500" 
+              frameborder="0">
+      </iframe>
     </div>
   </div>
-  
+
+  <!-- Axios (opcional, usado se precisar de API extra) -->
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  
+  <!-- Script principal -->
   <script src="app.js"></script>
 </body>
 </html>
