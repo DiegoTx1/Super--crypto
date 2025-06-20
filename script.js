@@ -1,5 +1,5 @@
 // =============================================
-// CONFIGURAÇÕES GLOBAIS (ATUALIZADAS PARA CRYPTO IDX)
+// CONFIGURAÇÕES GLOBAIS (ATUALIZADAS PARA MERCADO REAL)
 // =============================================
 const state = {
   ultimos: [],
@@ -12,68 +12,68 @@ const state = {
   ultimoScore: 0,
   contadorLaterais: 0,
   websocket: null,
-  apiKeys: ["demo"],
+  apiKeys: ["SUA_CHAVE_API_AQUI"], // Insira sua chave real da Binance
   currentApiKeyIndex: 0,
   marketOpen: true,
   dadosCrypto: []
 };
 
 const CONFIG = {
-  API_ENDPOINTS: ["https://api.binance.com/api/v3", "https://api.coingecko.com/api/v3"],
-  WS_ENDPOINT: "wss://stream.binance.com:9443/ws/crypto_idx@kline_1m",
+  API_ENDPOINTS: ["https://api.binance.com/api/v3"],
+  WS_ENDPOINT: "wss://stream.binance.com:9443/ws/btcusdt@kline_1m",
   PARES: {
-    CRYPTO_IDX: "CRYPTO_IDX/USD"
+    CRYPTO_IDX: "BTCUSDT"
   },
   PERIODOS: {
-    RSI: 12,
-    STOCH: 10,
-    WILLIAMS: 12,
-    EMA_CURTA: 8,
-    EMA_LONGA: 18,
-    EMA_200: 150,
-    SMA_VOLUME: 15,
-    MACD_RAPIDA: 10,
-    MACD_LENTA: 22,
-    MACD_SINAL: 7,
-    VELAS_CONFIRMACAO: 2,
-    ANALISE_LATERAL: 20,
-    VWAP: 15,
-    ATR: 10,
+    RSI: 14,
+    STOCH: 14,
+    WILLIAMS: 14,
+    EMA_CURTA: 9,
+    EMA_LONGA: 21,
+    EMA_200: 200,
+    SMA_VOLUME: 20,
+    MACD_RAPIDA: 12,
+    MACD_LENTA: 26,
+    MACD_SINAL: 9,
+    VELAS_CONFIRMACAO: 3,
+    ANALISE_LATERAL: 30,
+    VWAP: 20,
+    ATR: 14,
     BOLLINGER: 20
   },
   LIMIARES: {
-    SCORE_ALTO: 80,
+    SCORE_ALTO: 85,
     SCORE_MEDIO: 70,
-    RSI_OVERBOUGHT: 68,
-    RSI_OVERSOLD: 32,
-    STOCH_OVERBOUGHT: 85,
-    STOCH_OVERSOLD: 15,
-    WILLIAMS_OVERBOUGHT: -15,
-    WILLIAMS_OVERSOLD: -85,
-    VOLUME_ALTO: 2.0,
-    VARIACAO_LATERAL: 1.2,
-    VWAP_DESVIO: 0.008,
-    ATR_LIMIAR: 0.015,
-    BOLLINGER_DESVIO: 2.2
+    RSI_OVERBOUGHT: 70,
+    RSI_OVERSOLD: 30,
+    STOCH_OVERBOUGHT: 80,
+    STOCH_OVERSOLD: 20,
+    WILLIAMS_OVERBOUGHT: -20,
+    WILLIAMS_OVERSOLD: -80,
+    VOLUME_ALTO: 1.5,
+    VARIACAO_LATERAL: 0.8,
+    VWAP_DESVIO: 0.01,
+    ATR_LIMIAR: 0.02,
+    BOLLINGER_DESVIO: 2
   },
   PESOS: {
-    RSI: 1.2,
-    MACD: 1.8,
-    TENDENCIA: 1.3,
-    VOLUME: 1.5,
-    STOCH: 1.0,
-    WILLIAMS: 0.9,
-    CONFIRMACAO: 1.2,
-    LATERALIDADE: 1.5,
-    VWAP: 1.7,
-    VOLATILIDADE: 2.0,
-    BOLLINGER: 1.6
+    RSI: 1.3,
+    MACD: 1.7,
+    TENDENCIA: 1.4,
+    VOLUME: 1.6,
+    STOCH: 1.1,
+    WILLIAMS: 1.0,
+    CONFIRMACAO: 1.3,
+    LATERALIDADE: 1.6,
+    VWAP: 1.8,
+    VOLATILIDADE: 1.9,
+    BOLLINGER: 1.7
   },
   RISCO: {
-    MAX_RISCO_POR_OPERACAO: 0.01,
-    R_R_MINIMO: 2.0,
-    ATR_MULTIPLICADOR_SL: 2.0,
-    ATR_MULTIPLICADOR_TP: 4
+    MAX_RISCO_POR_OPERACAO: 0.02,
+    R_R_MINIMO: 2.5,
+    ATR_MULTIPLICADOR_SL: 1.8,
+    ATR_MULTIPLICADOR_TP: 3.5
   },
   MARKET_HOURS: {}
 };
@@ -106,9 +106,10 @@ function atualizarInterface(sinal, score) {
     comandoElement.textContent = sinal;
     comandoElement.className = sinal.toLowerCase();
     
-    if (sinal === "CALL") comandoElement.textContent += " 📈";
-    else if (sinal === "PUT") comandoElement.textContent += " 📉";
-    else if (sinal === "ESPERAR") comandoElement.textContent += " ✋";
+    if (sinal === "CALL") comandoElement.innerHTML = "CALL 📈";
+    else if (sinal === "PUT") comandoElement.innerHTML = "PUT 📉";
+    else if (sinal === "ESPERAR") comandoElement.innerHTML = "ESPERAR ✋";
+    else if (sinal === "ERRO") comandoElement.innerHTML = "ERRO ❌";
   }
   
   const scoreElement = document.getElementById("score");
@@ -128,7 +129,7 @@ function rotacionarApiKey() {
 }
 
 // =============================================
-// INDICADORES TÉCNICOS (ATUALIZADOS PARA CRYPTO)
+// INDICADORES TÉCNICOS (ATUALIZADOS)
 // =============================================
 const calcularMedia = {
   simples: (dados, periodo) => {
@@ -486,37 +487,22 @@ function determinarSinal(score, tendencia) {
 }
 
 // =============================================
-// CORE DO SISTEMA (ATUALIZADO PARA CRYPTO)
+// CORE DO SISTEMA (ATUALIZADO PARA MERCADO REAL)
 // =============================================
 async function obterDadosCrypto() {
   for (const endpoint of CONFIG.API_ENDPOINTS) {
     try {
-      if (endpoint.includes('binance')) {
-        const response = await fetch(`${endpoint}/klines?symbol=CRYPTOIDXUSDT&interval=1m&limit=150`);
-        if (!response.ok) continue;
-        const dados = await response.json();
-        return dados.map(k => ({
-          time: k[0],
-          open: parseFloat(k[1]),
-          high: parseFloat(k[2]),
-          low: parseFloat(k[3]),
-          close: parseFloat(k[4]),
-          volume: parseFloat(k[5])
-        }));
-      }
-      else if (endpoint.includes('coingecko')) {
-        const response = await fetch(`${endpoint}/coins/crypto-idx/market_chart?vs_currency=usd&days=1`);
-        if (!response.ok) continue;
-        const dados = await response.json();
-        return dados.prices.map((p, i) => ({
-          time: p[0],
-          open: i > 0 ? dados.prices[i-1][1] : p[1],
-          high: p[1] * 1.005,
-          low: p[1] * 0.995,
-          close: p[1],
-          volume: dados.total_volumes[i][1]
-        }));
-      }
+      const response = await fetch(`${endpoint}/klines?symbol=BTCUSDT&interval=1m&limit=200`);
+      if (!response.ok) continue;
+      const dados = await response.json();
+      return dados.map(k => ({
+        time: k[0],
+        open: parseFloat(k[1]),
+        high: parseFloat(k[2]),
+        low: parseFloat(k[3]),
+        close: parseFloat(k[4]),
+        volume: parseFloat(k[5])
+      }));
     } catch (e) {
       console.error(`Erro no endpoint ${endpoint}:`, e);
     }
@@ -578,21 +564,22 @@ async function analisarMercado() {
     const criteriosElement = document.getElementById("criterios");
     if (criteriosElement) {
       criteriosElement.innerHTML = `
-        <li>📊 Tendência: ${indicadores.tendencia.replace('_',' ')} ${
+        <li>📊 Tendência: <strong>${indicadores.tendencia.replace('_',' ')}</strong> ${
           indicadores.tendencia.includes("ALTA") ? '🟢' :
           indicadores.tendencia.includes("BAIXA") ? '🔴' : '🟡'}</li>
-        <li>📉 RSI: ${indicadores.rsi.toFixed(2)} ${
-          indicadores.rsi < CONFIG.LIMIARES.RSI_OVERSOLD ? '🔻' : ''}</li>
-        <li>📊 MACD: ${indicadores.macd.histograma.toFixed(6)} ${
+        <li>📉 RSI: <strong>${indicadores.rsi.toFixed(2)}</strong> ${
+          indicadores.rsi < CONFIG.LIMIARES.RSI_OVERSOLD ? '🔻' : 
+          indicadores.rsi > CONFIG.LIMIARES.RSI_OVERBOUGHT ? '🔺' : ''}</li>
+        <li>📊 MACD: <strong>${indicadores.macd.histograma.toFixed(6)}</strong> ${
           indicadores.macd.histograma>0?'🟢':'🔴'}</li>
-        <li>📈 Stochastic K/D: ${indicadores.stoch.k.toFixed(2)}/${indicadores.stoch.d.toFixed(2)}</li>
-        <li>📊 Williams: ${indicadores.williams.toFixed(2)}</li>
-        <li>📉 Bollinger: U ${indicadores.bollinger.upper.toFixed(5)} | M ${indicadores.bollinger.middle.toFixed(5)} | L ${indicadores.bollinger.lower.toFixed(5)}</li>
-        <li>💰 Preço: $${indicadores.close.toFixed(5)} ${
+        <li>📈 Stochastic: K<strong>${indicadores.stoch.k.toFixed(2)}</strong> D<strong>${indicadores.stoch.d.toFixed(2)}</strong></li>
+        <li>📊 Williams: <strong>${indicadores.williams.toFixed(2)}</strong></li>
+        <li>📉 Bollinger: U<strong>${indicadores.bollinger.upper.toFixed(2)}</strong> | M<strong>${indicadores.bollinger.middle.toFixed(2)}</strong> | L<strong>${indicadores.bollinger.lower.toFixed(2)}</strong></li>
+        <li>💰 Preço: <strong>$${indicadores.close.toFixed(2)}</strong> ${
           indicadores.close>emaCurta?'🟢':'🔴'}</li>
-        <li>📶 Médias: EMA${CONFIG.PERIODOS.EMA_CURTA} ${indicadores.emaCurta.toFixed(5)} | EMA${CONFIG.PERIODOS.EMA_LONGA} ${indicadores.emaLonga.toFixed(5)} | EMA200 ${indicadores.ema200.toFixed(5)}</li>
-        <li>💹 Volume: ${indicadores.volume.toFixed(2)} vs Média ${indicadores.volumeMedia.toFixed(2)}</li>
-        <li>📌 VWAP: ${indicadores.vwap.toFixed(5)} | ATR: ${indicadores.atr.toFixed(6)}</li>
+        <li>📶 Médias: EMA${CONFIG.PERIODOS.EMA_CURTA}<strong> ${indicadores.emaCurta.toFixed(2)}</strong> | EMA${CONFIG.PERIODOS.EMA_LONGA}<strong> ${indicadores.emaLonga.toFixed(2)}</strong></li>
+        <li>💹 Volume: <strong>${(indicadores.volume/1000).toFixed(1)}K</strong> vs Média <strong>${(indicadores.volumeMedia/1000).toFixed(1)}K</strong> ${
+          indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO ? '📈' : ''}</li>
       `;
     }
 
@@ -600,6 +587,22 @@ async function analisarMercado() {
     if (state.ultimos.length>10) state.ultimos.pop();
     const ultimosElement = document.getElementById("ultimos");
     if (ultimosElement) ultimosElement.innerHTML = state.ultimos.map(i=>`<li>${i}</li>`).join("");
+
+    // Gerenciamento de risco
+    if (sinal !== "ESPERAR") {
+      const stopLoss = (indicadores.close - (indicadores.atr * CONFIG.RISCO.ATR_MULTIPLICADOR_SL * (sinal === "CALL" ? -1 : 1))).toFixed(2);
+      const takeProfit = (indicadores.close + (indicadores.atr * CONFIG.RISCO.ATR_MULTIPLICADOR_TP * (sinal === "CALL" ? 1 : -1))).toFixed(2);
+      
+      const riscoElement = document.getElementById("risco");
+      if (riscoElement) {
+        riscoElement.innerHTML = `
+          <strong>ENTRADA:</strong> $${indicadores.close.toFixed(2)}<br>
+          <strong>STOP LOSS:</strong> $${stopLoss}<br>
+          <strong>TAKE PROFIT:</strong> $${takeProfit}<br>
+          <strong>RISCO:</strong> ${CONFIG.RISCO.MAX_RISCO_POR_OPERACAO*100}% capital
+        `;
+      }
+    }
 
     state.tentativasErro = 0;
   } catch (e) {
@@ -683,16 +686,213 @@ function sincronizarTimer() {
 }
 
 // =============================================
+// INTERFACE HTML (NÃO ALTERAR)
+// =============================================
+function criarInterface() {
+  document.body.innerHTML = `
+    <div class="container">
+      <div class="header">
+        <h1>CRYPTO IDX ANALYZER <span class="version">v3.0</span></h1>
+        <div class="info">
+          <div id="hora">00:00:00</div>
+          <div id="timer">0:60</div>
+        </div>
+      </div>
+      
+      <div class="dashboard">
+        <div class="sinal-box">
+          <div id="comando" class="esperar">ESPERAR ✋</div>
+          <div id="score">Confiança: 0%</div>
+        </div>
+        
+        <div class="analise-box">
+          <h2>📊 Análise Técnica</h2>
+          <ul id="criterios">
+            <li>Carregando análise...</li>
+          </ul>
+        </div>
+        
+        <div class="risco-box">
+          <h2>⚠️ Gerenciamento de Risco</h2>
+          <div id="risco">Aguardando sinal...</div>
+        </div>
+        
+        <div class="historico-box">
+          <h2>🕒 Últimos Sinais</h2>
+          <ul id="ultimos">
+            <li>Nenhum sinal ainda</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      }
+      
+      body {
+        background: linear-gradient(135deg, #1a2a3a, #0d1b2a);
+        color: #e0e0e0;
+        min-height: 100vh;
+        padding: 20px;
+      }
+      
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px 0;
+        border-bottom: 1px solid #2d3e50;
+        margin-bottom: 20px;
+      }
+      
+      h1 {
+        font-size: 28px;
+        background: linear-gradient(90deg, #00c6ff, #0072ff);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      
+      .version {
+        font-size: 14px;
+        background: #ff6b6b;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 10px;
+        margin-left: 10px;
+      }
+      
+      .info {
+        display: flex;
+        gap: 20px;
+        font-size: 18px;
+      }
+      
+      .dashboard {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-gap: 20px;
+      }
+      
+      .sinal-box {
+        grid-column: span 2;
+        background: linear-gradient(135deg, #1e3c72, #2a5298);
+        border-radius: 15px;
+        padding: 30px;
+        text-align: center;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      }
+      
+      #comando {
+        font-size: 42px;
+        font-weight: bold;
+        margin-bottom: 15px;
+        text-shadow: 0 0 10px rgba(255,255,255,0.5);
+      }
+      
+      .call {
+        color: #00ff00;
+        animation: pulseCall 1.5s infinite;
+      }
+      
+      .put {
+        color: #ff0000;
+        animation: pulsePut 1.5s infinite;
+      }
+      
+      .esperar {
+        color: #ffff00;
+      }
+      
+      @keyframes pulseCall {
+        0% { text-shadow: 0 0 5px #00ff00; }
+        50% { text-shadow: 0 0 20px #00ff00; }
+        100% { text-shadow: 0 0 5px #00ff00; }
+      }
+      
+      @keyframes pulsePut {
+        0% { text-shadow: 0 0 5px #ff0000; }
+        50% { text-shadow: 0 0 20px #ff0000; }
+        100% { text-shadow: 0 0 5px #ff0000; }
+      }
+      
+      #score {
+        font-size: 24px;
+        font-weight: bold;
+      }
+      
+      .analise-box, .risco-box, .historico-box {
+        background: #1e2b38;
+        border-radius: 15px;
+        padding: 20px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+      }
+      
+      h2 {
+        margin-bottom: 15px;
+        font-size: 20px;
+        color: #64b5f6;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      
+      ul {
+        list-style: none;
+      }
+      
+      li {
+        margin-bottom: 10px;
+        padding: 8px 12px;
+        background: #2a3a4a;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      
+      strong {
+        color: #bb86fc;
+      }
+      
+      #ultimos li {
+        font-size: 14px;
+        background: #253341;
+      }
+      
+      #risco {
+        line-height: 1.8;
+        font-size: 16px;
+      }
+      
+      @media (max-width: 768px) {
+        .dashboard {
+          grid-template-columns: 1fr;
+        }
+        
+        .sinal-box {
+          grid-column: span 1;
+        }
+      }
+    </style>
+  `;
+}
+
+// =============================================
 // INICIALIZAÇÃO
 // =============================================
 function iniciarAplicativo() {
-  const ids=['comando','score','hora','timer','criterios','ultimos'];
-  const falt = ids.filter(id=>!document.getElementById(id));
-  if (falt.length>0) {
-    console.error("Elementos faltando:", falt);
-    return;
-  }
-  
+  criarInterface();
   setInterval(atualizarRelogio, 1000);
   sincronizarTimer();
   conectarWebSocket();
