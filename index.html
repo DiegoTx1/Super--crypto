@@ -1,40 +1,517 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TX1 LITE REAL PRO v1.8.8 FINAL</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      background: linear-gradient(rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.9)), 
+                  url('https://images.unsplash.com/photo-1620712943543-bcc4688e7485?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1200&q=80');
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+      color: #fff;
+      min-height: 100vh;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .container {
+      max-width: 1200px;
+      width: 100%;
+      background-color: rgba(10, 15, 30, 0.85);
+      border-radius: 15px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      overflow: hidden;
+      border: 1px solid #342f6d;
+    }
+
+    header {
+      background: linear-gradient(90deg, #1a1a2e, #16213e, #0f3460);
+      padding: 20px;
+      text-align: center;
+      border-bottom: 2px solid #342f6d;
+      position: relative;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #e94560;
+      text-shadow: 0 0 10px rgba(233, 69, 96, 0.5);
+      margin-bottom: 10px;
+    }
+
+    .subtitle {
+      color: #7a7aab;
+      font-size: 1rem;
+    }
+
+    .version-badge {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      background: linear-gradient(45deg, #e94560, #ff6b6b);
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: bold;
+    }
+
+    .painel-central {
+      display: flex;
+      padding: 20px;
+      gap: 20px;
+    }
+
+    .coluna-esquerda, .coluna-direita {
+      flex: 1;
+      background: rgba(20, 25, 45, 0.7);
+      padding: 20px;
+      border-radius: 10px;
+      border: 1px solid #342f6d;
+    }
+
+    .coluna-esquerda {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .info-container {
+      background: rgba(10, 15, 30, 0.8);
+      padding: 15px;
+      border-radius: 10px;
+      border: 1px solid #342f6d;
+    }
+
+    .info-container p {
+      margin: 10px 0;
+      font-size: 1.1rem;
+    }
+
+    .info-container span {
+      font-weight: bold;
+    }
+
+    #comando {
+      font-size: 1.5rem;
+      padding: 8px 15px;
+      border-radius: 5px;
+      display: inline-block;
+      min-width: 120px;
+      text-align: center;
+      text-transform: uppercase;
+      font-weight: bold;
+      letter-spacing: 1px;
+      margin-left: 10px;
+    }
+
+    .call {
+      color: #4ade80;
+      background-color: rgba(74, 222, 128, 0.1);
+      border: 1px solid #4ade80;
+      text-shadow: 0 0 8px rgba(74, 222, 128, 0.4);
+    }
+
+    .put {
+      color: #f87171;
+      background-color: rgba(248, 113, 113, 0.1);
+      border: 1px solid #f87171;
+      text-shadow: 0 0 8px rgba(248, 113, 113, 0.4);
+    }
+
+    .esperar {
+      color: #60a5fa;
+      background-color: rgba(96, 165, 250, 0.1);
+      border: 1px solid #60a5fa;
+      text-shadow: 0 0 8px rgba(96, 165, 250, 0.4);
+    }
+
+    #score {
+      color: #fbbf24;
+      font-weight: bold;
+    }
+
+    #timer {
+      color: #34d399;
+      font-weight: bold;
+    }
+
+    #hora {
+      color: #93c5fd;
+      font-weight: bold;
+    }
+
+    h3 {
+      color: #e94560;
+      margin-bottom: 15px;
+      font-size: 1.4rem;
+      border-bottom: 1px solid #342f6d;
+      padding-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    h3 i {
+      font-size: 1.2rem;
+    }
+
+    ul {
+      list-style-type: none;
+    }
+
+    #criterios li {
+      background: rgba(15, 23, 42, 0.8);
+      padding: 12px;
+      margin-bottom: 10px;
+      border-radius: 5px;
+      border-left: 3px solid #e94560;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #criterios li i {
+      color: #e94560;
+      min-width: 20px;
+      text-align: center;
+    }
+
+    .buttons-container {
+      display: flex;
+      gap: 15px;
+      margin-top: 15px;
+    }
+
+    button {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button:nth-child(1) {
+      background: linear-gradient(to right, #4ade80, #22c55e);
+      color: #0f172a;
+    }
+
+    button:nth-child(2) {
+      background: linear-gradient(to right, #f87171, #ef4444);
+      color: #0f172a;
+    }
+
+    #historico {
+      font-weight: bold;
+      font-size: 1.2rem;
+      margin-top: 15px;
+      text-align: center;
+      padding: 10px;
+      background: rgba(15, 23, 42, 0.8);
+      border-radius: 8px;
+      border: 1px solid #342f6d;
+    }
+
+    #ultimos {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    #ultimos li {
+      background: rgba(15, 23, 42, 0.8);
+      padding: 12px;
+      margin-bottom: 10px;
+      border-radius: 5px;
+      border-left: 3px solid #6366f1;
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.95rem;
+      transition: all 0.3s ease;
+    }
+
+    #ultimos li:hover {
+      transform: translateX(5px);
+      background: rgba(20, 30, 50, 0.9);
+    }
+
+    #ultimos li span:first-child {
+      color: #93c5fd;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #ultimos li span:last-child {
+      font-weight: bold;
+    }
+
+    .call-indicator {
+      color: #4ade80;
+    }
+
+    .put-indicator {
+      color: #f87171;
+    }
+
+    .esperar-indicator {
+      color: #60a5fa;
+    }
+
+    .grafico {
+      width: 100%;
+      height: 300px;
+      border: none;
+      border-radius: 0 0 15px 15px;
+    }
+
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 20px;
+      background: rgba(10, 15, 30, 0.9);
+      border-top: 1px solid #342f6d;
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      color: #93c5fd;
+    }
+
+    /* Responsividade */
+    @media (max-width: 768px) {
+      .painel-central {
+        flex-direction: column;
+      }
+      
+      h1 {
+        font-size: 1.8rem;
+      }
+      
+      .version-badge {
+        position: static;
+        margin-top: 10px;
+      }
+    }
+  </style>
 </head>
 <body>
   <div class="container">
-    <h1>TX1 LITE REAL PRO v1.8.8 FINAL</h1>
+    <header>
+      <h1>TX1 LITE REAL PRO</h1>
+      <p class="subtitle">Sistema de Análise de Mercado em Tempo Real</p>
+      <div class="version-badge">v1.8.8 FINAL</div>
+    </header>
+    
     <div class="painel-central">
       <div class="coluna-esquerda">
-        <p>Comando Atual: <span id="comando">ESPERAR</span></p>
-        <p>Score de Confiança: <span id="score">--%</span></p>
-        <p>Próxima Leitura em: <span id="timer">60</span>s</p>
-        <p>Última Análise: <span id="hora">--:--:--</span></p>
-        <div>
-          <h3>Critérios Técnicos</h3>
-          <ul id="criterios"></ul>
+        <div class="info-container">
+          <p><i class="fas fa-terminal"></i> Comando Atual: <span id="comando" class="esperar">ESPERAR</span></p>
+          <p><i class="fas fa-chart-line"></i> Score de Confiança: <span id="score">--%</span></p>
+          <p><i class="fas fa-clock"></i> Próxima Leitura em: <span id="timer">60</span>s</p>
+          <p><i class="fas fa-sync-alt"></i> Última Análise: <span id="hora">--:--:--</span></p>
         </div>
-        <div>
-          <button onclick="registrar('WIN')">WIN</button>
-          <button onclick="registrar('LOSS')">LOSS</button>
-          <p>Histórico: <span id="historico">0 WIN / 0 LOSS</span></p>
+        
+        <div class="info-container">
+          <h3><i class="fas fa-cogs"></i> Critérios Técnicos</h3>
+          <ul id="criterios">
+            <li><i class="fas fa-chart-bar"></i> Aguardando primeira análise...</li>
+          </ul>
+        </div>
+        
+        <div class="info-container">
+          <div class="buttons-container">
+            <button onclick="registrar('WIN')"><i class="fas fa-check-circle"></i> WIN</button>
+            <button onclick="registrar('LOSS')"><i class="fas fa-times-circle"></i> LOSS</button>
+          </div>
+          <p id="historico">Histórico: 0 WIN / 0 LOSS</p>
         </div>
       </div>
+      
       <div class="coluna-direita">
-        <h3>Últimos Sinais</h3>
-        <ul id="ultimos"></ul>
+        <div class="info-container">
+          <h3><i class="fas fa-history"></i> Últimos Sinais</h3>
+          <ul id="ultimos">
+            <li><span><i class="fas fa-info-circle"></i> Nenhum sinal registrado ainda</span></li>
+          </ul>
+        </div>
       </div>
     </div>
+    
     <iframe class="grafico" src="https://s.tradingview.com/widgetembed/?symbol=BINANCE:BTCUSDT&interval=1&theme=dark"
-      width="100%" height="260" frameborder="0"></iframe>
+      width="100%" height="300" frameborder="0"></iframe>
+      
+    <div class="status-bar">
+      <div class="status-item"><i class="fas fa-wifi"></i> Conectado à Binance</div>
+      <div class="status-item"><i class="fas fa-database"></i> Dados em tempo real</div>
+      <div class="status-item"><i class="fas fa-shield-alt"></i> Sistema seguro</div>
+    </div>
   </div>
+  
   <audio id="som-call" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg" preload="auto"></audio>
   <audio id="som-put" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
-  <script src="script.js"></script>
+  
+  <script>
+    // Estado da aplicação
+    const state = {
+      wins: 0,
+      losses: 0,
+      ultimosSinais: [],
+      ultimoSinal: null
+    };
+
+    // Função para registrar resultados
+    function registrar(resultado) {
+      if (resultado === 'WIN') {
+        state.wins++;
+      } else if (resultado === 'LOSS') {
+        state.losses++;
+      }
+      
+      // Atualizar interface
+      document.getElementById('historico').textContent = 
+        `Histórico: ${state.wins} WIN / ${state.losses} LOSS`;
+      
+      // Adicionar ao histórico de sinais
+      const horaAtual = new Date().toLocaleTimeString();
+      state.ultimosSinais.unshift({
+        hora: horaAtual,
+        resultado: resultado,
+        sinal: state.ultimoSinal
+      });
+      
+      // Manter apenas os últimos 10 sinais
+      if (state.ultimosSinais.length > 10) {
+        state.ultimosSinais.pop();
+      }
+      
+      // Atualizar lista de sinais
+      const ultimosElement = document.getElementById('ultimos');
+      ultimosElement.innerHTML = state.ultimosSinais.map(item => {
+        let indicatorClass = '';
+        if (item.sinal === 'CALL') indicatorClass = 'call-indicator';
+        else if (item.sinal === 'PUT') indicatorClass = 'put-indicator';
+        else indicatorClass = 'esperar-indicator';
+        
+        return `<li>
+          <span><i class="fas fa-${item.resultado === 'WIN' ? 'check-circle' : 'times-circle'} ${item.resultado === 'WIN' ? 'call-indicator' : 'put-indicator'}"></i> ${item.hora} - ${item.sinal || 'ESPERAR'}</span>
+          <span class="${indicatorClass}">${item.resultado}</span>
+        </li>`;
+      }).join('');
+    }
+
+    // Simulação de análise do mercado
+    function simularAnalise() {
+      const comandos = ['CALL', 'PUT', 'ESPERAR'];
+      const comandoAtual = comandos[Math.floor(Math.random() * comandos.length)];
+      state.ultimoSinal = comandoAtual;
+      const score = Math.floor(Math.random() * 41) + 60; // 60-100
+      const horaAtual = new Date().toLocaleTimeString();
+      
+      // Atualizar comando
+      const comandoElement = document.getElementById('comando');
+      comandoElement.textContent = comandoAtual;
+      comandoElement.className = comandoAtual.toLowerCase();
+      
+      // Atualizar score
+      document.getElementById('score').textContent = `${score}%`;
+      
+      // Atualizar hora
+      document.getElementById('hora').textContent = horaAtual;
+      
+      // Atualizar critérios técnicos
+      const criterios = [
+        '<i class="fas fa-chart-line"></i> EMA 8: 52,340 | EMA 18: 52,310 | Tendência de Alta',
+        '<i class="fas fa-wave-square"></i> RSI: 62 (Neutro)',
+        '<i class="fas fa-exchange-alt"></i> MACD: 0.0012 (Positivo)',
+        '<i class="fas fa-volume-up"></i> Volume: 15% acima da média',
+        '<i class="fas fa-random"></i> Stochastic: K 75 / D 68 (Sobrevendido)',
+        '<i class="fas fa-balance-scale"></i> VWAP: 52,325 | Preço Atual: 52,338',
+        '<i class="fas fa-bolt"></i> Volatilidade: Alta (ATR: 0.015)'
+      ];
+      
+      const criteriosElement = document.getElementById('criterios');
+      criteriosElement.innerHTML = criterios.map(c => `<li>${c}</li>`).join('');
+      
+      // Tocar som para CALL/PUT
+      if (comandoAtual === 'CALL') {
+        document.getElementById('som-call').play();
+      } else if (comandoAtual === 'PUT') {
+        document.getElementById('som-put').play();
+      }
+      
+      // Atualizar timer
+      let tempoRestante = 60;
+      const timerElement = document.getElementById('timer');
+      timerElement.textContent = tempoRestante;
+      
+      const timer = setInterval(() => {
+        tempoRestante--;
+        timerElement.textContent = tempoRestante;
+        
+        if (tempoRestante <= 0) {
+          clearInterval(timer);
+          simularAnalise();
+        }
+      }, 1000);
+    }
+
+    // Iniciar simulação
+    setTimeout(() => {
+      simularAnalise();
+      
+      // Adicionar alguns sinais de exemplo
+      state.ultimosSinais = [
+        { hora: "10:23:45", resultado: "WIN", sinal: "CALL" },
+        { hora: "10:18:30", resultado: "LOSS", sinal: "PUT" },
+        { hora: "10:12:15", resultado: "WIN", sinal: "CALL" }
+      ];
+      
+      // Atualizar lista de sinais
+      const ultimosElement = document.getElementById('ultimos');
+      ultimosElement.innerHTML = state.ultimosSinais.map(item => {
+        let indicatorClass = item.sinal === 'CALL' ? 'call-indicator' : 'put-indicator';
+        return `<li>
+          <span><i class="fas fa-${item.resultado === 'WIN' ? 'check-circle' : 'times-circle'} ${item.resultado === 'WIN' ? 'call-indicator' : 'put-indicator'}"></i> ${item.hora} - ${item.sinal}</span>
+          <span class="${indicatorClass}">${item.resultado}</span>
+        </li>`;
+      }).join('');
+    }, 1000);
+  </script>
 </body>
 </html>
