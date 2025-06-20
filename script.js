@@ -61,9 +61,9 @@ const CONFIG = {
     WILLIAMS_OVERBOUGHT: -15,
     WILLIAMS_OVERSOLD: -85,
     VOLUME_ALTO: 1.8,      // Volume mais significativo em cripto
-    VARIACAO_LATERAL: 1.2, // Maior amplitude para cripto
-    VWAP_DESVIO: 0.025,    // Limiar aumentado para volatilidade
-    ATR_LIMIAR: 0.035,     // Ajustado para volatilidade de cripto
+    VARIACAO_LATERAL: 0.4, // REDUZIDO para detectar menos laterais
+    VWAP_DESVIO: 0.025,
+    ATR_LIMIAR: 0.04,      // AUMENTADO para maior sensibilidade
     SUPERTREND_SENSIBILIDADE: 2.5
   },
   PESOS: {
@@ -311,7 +311,7 @@ function calcularATR(dados, periodo = CONFIG.PERIODOS.ATR) {
   }
 }
 
-// NOVO: SuperTrend (indicador essencial para cripto em 2025)
+// SuperTrend (indicador essencial para cripto em 2025)
 function calcularSuperTrend(dados, periodo = CONFIG.PERIODOS.SUPERTREND, multiplicador = CONFIG.LIMIARES.SUPERTREND_SENSIBILIDADE) {
   try {
     if (!Array.isArray(dados) || dados.length < periodo) return { direcao: 0, valor: 0 };
@@ -328,13 +328,19 @@ function calcularSuperTrend(dados, periodo = CONFIG.PERIODOS.SUPERTREND, multipl
     
     if (dados.length > periodo) {
       const prev = dados[dados.length - 2];
+      const prevClose = prev.close;
       
-      if (prev.close > superTrend) {
+      // Lógica revisada para evitar flip-flop
+      if (prevClose > (prev.superTrend || upperBand)) {
         direcao = 1;
-        superTrend = Math.max(upperBand, prev.superTrend || upperBand);
-      } else {
+        superTrend = Math.min(upperBand, prev.superTrend || upperBand);
+      } else if (prevClose < (prev.superTrend || lowerBand)) {
         direcao = -1;
-        superTrend = Math.min(lowerBand, prev.superTrend || lowerBand);
+        superTrend = Math.max(lowerBand, prev.superTrend || lowerBand);
+      } else {
+        // Manter direção atual
+        direcao = prev.direcao || 1;
+        superTrend = prev.superTrend || upperBand;
       }
     }
     
@@ -345,7 +351,7 @@ function calcularSuperTrend(dados, periodo = CONFIG.PERIODOS.SUPERTREND, multipl
   }
 }
 
-// NOVO: Volume Profile (áreas de valor)
+// Volume Profile (áreas de valor)
 function calcularVolumeProfile(dados, periodo = CONFIG.PERIODOS.VOLUME_PROFILE) {
   try {
     if (!Array.isArray(dados) || dados.length < periodo) return { pvp: 0, vaHigh: 0, vaLow: 0 };
@@ -375,7 +381,7 @@ function calcularVolumeProfile(dados, periodo = CONFIG.PERIODOS.VOLUME_PROFILE) 
   }
 }
 
-// NOVO: Detectar divergências (exaustão de tendência)
+// Detectar divergências (exaustão de tendência)
 function detectarDivergencias(closes, rsis, highs, lows) {
   try {
     if (closes.length < 5 || rsis.length < 5) return { divergenciaRSI: false, divergenciaPreco: false };
@@ -406,59 +412,59 @@ function detectarDivergencias(closes, rsis, highs, lows) {
 }
 
 // =============================================
-// SISTEMA DE DECISÃO (ATUALIZADO PARA CRYPTO 2025)
+// SISTEMA DE DETECÇÃO DE TENDÊNCIA (REVISADO)
 // =============================================
-function avaliarTendencia(closes, emaCurta, emaMedia, emaLonga, ema200, superTrend, atr) {
+function avaliarTendencia(closes, emaCurta, emaMedia, emaLonga, ema200, superTrend, atr, volume, volumeMedia) {
   if (closes.length < CONFIG.PERIODOS.VELAS_CONFIRMACAO) return "NEUTRA";
   
+  const ultimoClose = closes[closes.length - 1];
+  const volumeForte = volume > volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO * 1.5;
+  
+  // 1. Sistema hierárquico de detecção de tendência
+  const tendenciaSuperTrend = superTrend.direcao > 0 ? "ALTA" : "BAIXA";
+  
+  // 2. Força da tendência baseada em múltiplos fatores
+  let forca = 0;
+  
+  // Fator 1: Posição relativa às EMAs
+  if (ultimoClose > emaCurta && emaCurta > emaMedia && emaMedia > emaLonga) forca += 3;
+  else if (ultimoClose < emaCurta && emaCurta < emaMedia && emaMedia < emaLonga) forca += 3;
+  
+  // Fator 2: Distância da EMA 200
+  const distanciaEMA200 = Math.abs(ultimoClose - ema200) / ema200;
+  if (distanciaEMA200 > 0.03) forca += 2;
+  
+  // Fator 3: Volume forte na direção da tendência
+  if (volumeForte) forca += 2;
+  
+  // Fator 4: Confirmação do SuperTrend
+  if ((tendenciaSuperTrend === "ALTA" && ultimoClose > superTrend.valor * 1.005) ||
+      (tendenciaSuperTrend === "BAIXA" && ultimoClose < superTrend.valor * 0.995)) {
+    forca += 2;
+  }
+  
+  // 3. Verificar se o mercado está lateral (critérios mais restritos)
   if (detectarMercadoLateral(closes, atr)) {
     state.contadorLaterais++;
-    return "LATERAL";
+    // Só classificar como lateral se não houver tendência forte
+    if (forca < 4) return "LATERAL";
   }
   
   state.contadorLaterais = 0;
   
-  const ultimoClose = closes[closes.length - 1];
-  const penultimoClose = closes[closes.length - 2];
+  // 4. Classificação final da tendência
+  if (forca >= 6) {
+    return tendenciaSuperTrend === "ALTA" ? "FORTE_ALTA" : "FORTE_BAIXA";
+  }
   
-  // Sistema híbrido de tendência (3 métodos)
-  const metodo1 = () => {
-    if (ultimoClose > ema200 && emaCurta > emaMedia && emaMedia > emaLonga) return "FORTE_ALTA";
-    if (ultimoClose < ema200 && emaCurta < emaMedia && emaMedia < emaLonga) return "FORTE_BAIXA";
-    return null;
-  };
+  if (forca >= 4) {
+    return tendenciaSuperTrend;
+  }
   
-  const metodo2 = () => {
-    if (superTrend.direcao > 0 && ultimoClose > superTrend.valor) return "ALTA";
-    if (superTrend.direcao < 0 && ultimoClose < superTrend.valor) return "BAIXA";
-    return null;
-  };
+  // 5. Tendência fraca ou divergências
+  const tendenciaBasica = emaCurta > emaMedia ? "ALTA" : "BAIXA";
   
-  const metodo3 = () => {
-    const diffCurtaMedia = emaCurta - emaMedia;
-    const diffMediaLonga = emaMedia - emaLonga;
-    const threshold = atr * 0.3;
-    
-    if (diffCurtaMedia > threshold && diffMediaLonga > threshold) return "ALTA";
-    if (diffCurtaMedia < -threshold && diffMediaLonga < -threshold) return "BAIXA";
-    return null;
-  };
-  
-  // Consenso entre métodos
-  const resultados = [metodo1(), metodo2(), metodo3()].filter(Boolean);
-  const contagem = {
-    FORTE_ALTA: resultados.filter(r => r === "FORTE_ALTA").length,
-    FORTE_BAIXA: resultados.filter(r => r === "FORTE_BAIXA").length,
-    ALTA: resultados.filter(r => r === "ALTA").length,
-    BAIXA: resultados.filter(r => r === "BAIXA").length
-  };
-  
-  if (contagem.FORTE_ALTA >= 2) return "FORTE_ALTA";
-  if (contagem.FORTE_BAIXA >= 2) return "FORTE_BAIXA";
-  if (contagem.ALTA >= 2) return "ALTA";
-  if (contagem.BAIXA >= 2) return "BAIXA";
-  
-  return "NEUTRA";
+  return tendenciaBasica;
 }
 
 function detectarMercadoLateral(closes, atr) {
@@ -469,9 +475,13 @@ function detectarMercadoLateral(closes, atr) {
   const minimo = Math.min(...ultimosPrecos);
   const variacao = ((maximo - minimo) / minimo) * 100;
   
+  // Critério mais restrito para lateralidade
   return variacao < (CONFIG.LIMIARES.VARIACAO_LATERAL * atr * 100);
 }
 
+// =============================================
+// SISTEMA DE DECISÃO (ATUALIZADO PARA CRYPTO 2025)
+// =============================================
 function calcularScore(indicadores, divergencias) {
   let score = 50;
 
@@ -492,20 +502,20 @@ function calcularScore(indicadores, divergencias) {
   // Análise MACD
   score += (Math.min(Math.max(indicadores.macd.histograma * 10, -15), 15) * CONFIG.PESOS.MACD);
 
-  // Análise de Tendência
+  // Análise de Tendência (peso maior para tendências fortes)
   switch(indicadores.tendencia) {
     case "FORTE_ALTA": 
-      score += 25 * CONFIG.PESOS.TENDENCIA; 
-      if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO * 1.5) score += 8;
+      score += 30 * CONFIG.PESOS.TENDENCIA;
+      if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO * 1.5) score += 10;
       break;
     case "ALTA": score += 15 * CONFIG.PESOS.TENDENCIA; break;
     case "FORTE_BAIXA": 
-      score -= 25 * CONFIG.PESOS.TENDENCIA; 
-      if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO * 1.5) score -= 8;
+      score -= 30 * CONFIG.PESOS.TENDENCIA;
+      if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO * 1.5) score -= 10;
       break;
     case "BAIXA": score -= 15 * CONFIG.PESOS.TENDENCIA; break;
     case "LATERAL": 
-      score -= Math.min(state.contadorLaterais, 15) * CONFIG.PESOS.LATERALIDADE; 
+      score -= Math.min(state.contadorLaterais, 15) * CONFIG.PESOS.LATERALIDADE * 1.2;
       break;
   }
 
@@ -580,22 +590,21 @@ function calcularScore(indicadores, divergencias) {
 }
 
 function determinarSinal(score, tendencia, divergencias) {
+  // Priorizar divergências
   if (divergencias.divergenciaRSI) {
     return divergencias.tipoDivergencia === "ALTA" ? "CALL" : "PUT";
   }
   
-  if (tendencia === "LATERAL") {
-    return score > 85 ? "CALL" : "ESPERAR";
-  }
+  // Tendências fortes têm prioridade
+  if (tendencia === "FORTE_ALTA" && score >= CONFIG.LIMIARES.SCORE_MEDIO) return "CALL";
+  if (tendencia === "FORTE_BAIXA" && score >= CONFIG.LIMIARES.SCORE_MEDIO) return "PUT";
   
-  if (score >= CONFIG.LIMIARES.SCORE_ALTO) {
-    return tendencia.includes("ALTA") ? "CALL" : "PUT";
-  }
+  // Tendências médias exigem score mais alto
+  if (tendencia === "ALTA" && score >= CONFIG.LIMIARES.SCORE_ALTO) return "CALL";
+  if (tendencia === "BAIXA" && score >= CONFIG.LIMIARES.SCORE_ALTO) return "PUT";
   
-  if (score >= CONFIG.LIMIARES.SCORE_MEDIO) {
-    if (tendencia === "NEUTRA") return "ESPERAR";
-    return tendencia.includes("ALTA") ? "CALL" : "PUT";
-  }
+  // Lateralidade exige score muito alto
+  if (tendencia === "LATERAL" && score > 88) return "CALL";
   
   return "ESPERAR";
 }
@@ -702,6 +711,7 @@ async function analisarMercado() {
     const superTrend = calcularSuperTrend(dados);
     const volumeProfile = calcularVolumeProfile(dados);
     const divergencias = detectarDivergencias(closes, dados.map((_, i) => calcularRSI(closes.slice(0, i+1))), highs, lows);
+    const volumeMedia = calcularMedia.simples(volumes, CONFIG.PERIODOS.SMA_VOLUME) || 1;
 
     const indicadores = {
       rsi: calcularRSI(closes),
@@ -711,7 +721,7 @@ async function analisarMercado() {
       emaLonga,
       ema200,
       volume: velaAtual.volume,
-      volumeMedia: calcularMedia.simples(volumes, CONFIG.PERIODOS.SMA_VOLUME) || 1,
+      volumeMedia,
       stoch: calcularStochastic(highs, lows, closes),
       williams: calcularWilliams(highs, lows, closes),
       vwap: calcularVWAP(dados),
@@ -719,7 +729,17 @@ async function analisarMercado() {
       superTrend,
       volumeProfile,
       close: velaAtual.close,
-      tendencia: avaliarTendencia(closes, emaCurta, emaMedia, emaLonga, ema200, superTrend, atr)
+      tendencia: avaliarTendencia(
+        closes, 
+        emaCurta, 
+        emaMedia, 
+        emaLonga, 
+        ema200, 
+        superTrend, 
+        atr,
+        velaAtual.volume,
+        volumeMedia
+      )
     };
 
     const score = calcularScore(indicadores, divergencias);
@@ -807,6 +827,7 @@ async function backtestSimples(dias = 5) {
       const ema200 = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_200).slice(-1)[0];
       const atr = calcularATR(slice);
       const superTrend = calcularSuperTrend(slice);
+      const volumeMedia = calcularMedia.simples(volumes.slice(-CONFIG.PERIODOS.SMA_VOLUME), CONFIG.PERIODOS.SMA_VOLUME) || 1;
       const divergencias = detectarDivergencias(closes, closes.map((_, idx) => calcularRSI(closes.slice(0, idx+1))), highs, lows);
       
       const indicadores = {
@@ -817,14 +838,24 @@ async function backtestSimples(dias = 5) {
         emaLonga,
         ema200,
         volume: slice[i-1].volume,
-        volumeMedia: calcularMedia.simples(volumes.slice(-CONFIG.PERIODOS.SMA_VOLUME), CONFIG.PERIODOS.SMA_VOLUME) || 1,
+        volumeMedia,
         stoch: calcularStochastic(highs, lows, closes),
         williams: calcularWilliams(highs, lows, closes),
         vwap: calcularVWAP(slice),
         atr,
         superTrend,
         close: slice[i-1].close,
-        tendencia: avaliarTendencia(closes, emaCurta, emaMedia, emaLonga, ema200, superTrend, atr)
+        tendencia: avaliarTendencia(
+          closes, 
+          emaCurta, 
+          emaMedia, 
+          emaLonga, 
+          ema200, 
+          superTrend, 
+          atr,
+          slice[i-1].volume,
+          volumeMedia
+        )
       };
       
       const score = calcularScore(indicadores, divergencias);
