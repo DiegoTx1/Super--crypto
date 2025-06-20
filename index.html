@@ -1,38 +1,102 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>TX1 LITE REAL PRO v1.8.8 FINAL</title>
+  <title>QUANTEX PRO v2.5</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/technicalindicators/dist/technicalindicators.js"></script>
 </head>
 <body>
   <div class="container">
-    <h1>TX1 LITE REAL PRO v1.8.8 FINAL</h1>
-    <div class="painel-central">
-      <div class="coluna-esquerda">
-        <p>Comando Atual: <span id="comando">ESPERAR</span></p>
-        <p>Score de Confiança: <span id="score">--%</span></p>
-        <p>Próxima Leitura em: <span id="timer">60</span>s</p>
-        <p>Última Análise: <span id="hora">--:--:--</span></p>
-        <div>
-          <h3>Critérios Técnicos</h3>
-          <ul id="criterios"></ul>
-        </div>
-        <div>
-          <button onclick="registrar('WIN')">WIN</button>
-          <button onclick="registrar('LOSS')">LOSS</button>
-          <p>Histórico: <span id="historico">0 WIN / 0 LOSS</span></p>
-        </div>
-      </div>
-      <div class="coluna-direita">
-        <h3>Últimos Sinais</h3>
-        <ul id="ultimos"></ul>
+    <div class="header">
+      <h1>QUANTEX PRO v2.5</h1>
+      <div class="status-bar">
+        <span id="exchange-status">Binance: <span class="connected">● CONECTADO</span></span>
+        <span id="liquidity">Liquidez: $<span id="liquidity-value">--</span></span>
+        <span id="market-status">Mercado: <span id="market-trend">--</span></span>
       </div>
     </div>
-    <iframe class="grafico" src="https://s.tradingview.com/widgetembed/?symbol=BINANCE:BTCUSDT&interval=1&theme=dark"
-      width="100%" height="260" frameborder="0"></iframe>
+    
+    <div class="dashboard">
+      <div class="signal-panel">
+        <div class="signal-card">
+          <h2>SINAL ATUAL</h2>
+          <div class="signal-display">
+            <span id="comando">ANALISANDO</span>
+            <div id="confidence-gauge"></div>
+            <span id="score">0%</span>
+          </div>
+          <div class="signal-metrics">
+            <div class="metric">
+              <span>Volatilidade</span>
+              <div class="progress-bar"><div id="volatility-bar"></div></div>
+            </div>
+            <div class="metric">
+              <span>Força Tendência</span>
+              <div class="progress-bar"><div id="trend-bar"></div></div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="execution-panel">
+          <h3>CONTROLE DE EXECUÇÃO</h3>
+          <div class="counters">
+            <div>
+              <span>Próxima análise:</span>
+              <span id="timer">60</span>s
+            </div>
+            <div>
+              <span>Última atualização:</span>
+              <span id="hora">--:--:--</span>
+            </div>
+          </div>
+          <div class="buttons">
+            <button id="btn-win" class="win-btn" onclick="registrar('WIN')">WIN</button>
+            <button id="btn-loss" class="loss-btn" onclick="registrar('LOSS')">LOSS</button>
+            <button id="btn-pause" onclick="togglePause()">PAUSAR</button>
+          </div>
+          <div class="performance">
+            <h4>DESEMPENHO</h4>
+            <div id="performance-chart"></div>
+            <p>Histórico: <span id="historico">0 WIN / 0 LOSS</span></p>
+          </div>
+        </div>
+      </div>
+      
+      <div class="indicators-panel">
+        <div class="indicator-section">
+          <h3>INDICADORES TÉCNICOS</h3>
+          <ul id="criterios"></ul>
+        </div>
+        
+        <div class="indicator-section">
+          <h3>ANÁLISE QUANTITATIVA</h3>
+          <ul id="quant-metrics"></ul>
+        </div>
+        
+        <div class="indicator-section">
+          <h3>ÚLTIMOS SINAIS</h3>
+          <ul id="ultimos"></ul>
+        </div>
+      </div>
+    </div>
+    
+    <div class="chart-container">
+      <div class="chart-header">
+        <div class="timeframes">
+          <button class="timeframe-btn active" data-tf="1m">1M</button>
+          <button class="timeframe-btn" data-tf="5m">5M</button>
+          <button class="timeframe-btn" data-tf="15m">15M</button>
+        </div>
+        <div class="symbol-info">
+          BTC/USDT | $<span id="btc-price">--</span> | Δ <span id="btc-change">--</span>%
+        </div>
+      </div>
+      <canvas id="price-chart"></canvas>
+    </div>
   </div>
+  
   <audio id="som-call" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg" preload="auto"></audio>
   <audio id="som-put" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
   <script src="script.js"></script>
