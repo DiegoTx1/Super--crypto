@@ -232,7 +232,7 @@ function calcularStochastic(highs, lows, closes, periodo = CONFIG.PERIODOS.STOCH
 
 function calcularWilliams(highs, lows, closes, periodo = CONFIG.PERIODOS.WILLIAMS) {
   try {
-    if (!Array.isArray(closes) || closes.length < periodo) return -50; // Valor neutro
+    if (!Array.isArray(closes) || closes.length < periodo) return 0;
     
     const sliceHigh = highs.slice(-periodo);
     const sliceLow = lows.slice(-periodo);
@@ -240,10 +240,10 @@ function calcularWilliams(highs, lows, closes, periodo = CONFIG.PERIODOS.WILLIAM
     const lowestLow = Math.min(...sliceLow);
     const range = highestHigh - lowestLow;
     
-    return range > 0 ? ((highestHigh - closes[closes.length-1]) / range) * -100 : -50;
+    return range > 0 ? ((highestHigh - closes[closes.length-1]) / range) * -100 : 0;
   } catch (e) {
     console.error("Erro no cálculo Williams:", e);
-    return -50;
+    return 0;
   }
 }
 
@@ -694,12 +694,12 @@ function calcularScore(indicadores, divergencias) {
   if (indicadores.williams < CONFIG.LIMIARES.WILLIAMS_OVERSOLD) {
     score += 10 * CONFIG.PESOS.WILLIAMS; 
   }
-  if (indicadores.williams > CONFIG.LIMIARES.WILLIAMS_OVERBOUGht) {
+  if (indicadores.williams > CONFIG.LIMIARES.WILLIAMS_OVERBOUGHT) {
     score -= 10 * CONFIG.PESOS.WILLIAMS; 
   }
 
   // Análise VWAP
-  const vwapDesvio = Math.abs(indicadores.close - indicadores.vwap) / Math.max(indicadores.vwap, 0.01);
+  const vwapDesvio = Math.abs(indicadores.close - indicadores.vwap) / indicadores.vwap;
   if (vwapDesvio > CONFIG.LIMIARES.VWAP_DESVIO) {
     score += (indicadores.close > indicadores.vwap ? 8 : -8) * CONFIG.PESOS.VWAP;
   }
@@ -778,10 +778,10 @@ async function detectarOrdensOcultas() {
     if (!response.ok) throw new Error("Falha na API");
     
     const data = await response.json();
-    // Detectar grandes ordens (>10 BTC) em ambos os lados
-    const largeBids = data.bids.filter(bid => parseFloat(bid[1]) > 10);
-    const largeAsks = data.asks.filter(ask => parseFloat(ask[1]) > 10);
-    return (largeBids.length > 3 && largeAsks.length > 3);
+    // Detectar grandes ordens (>10 BTC)
+    const largeOrders = data.bids.filter(bid => parseFloat(bid[1]) > 10)
+                      .concat(data.asks.filter(ask => parseFloat(ask[1]) > 10));
+    return largeOrders.length > 5;
   } catch (e) {
     console.error("Erro ordens ocultas:", e);
     return false;
@@ -885,7 +885,7 @@ async function analisarMercado() {
       emaMedia,
       emaLonga,
       ema200,
-      volume: velaAtual.volume || 0,
+      volume: velaAtual.volume,
       volumeMedia: calcularMedia.simples(volumes.slice(-CONFIG.PERIODOS.SMA_VOLUME), CONFIG.PERIODOS.SMA_VOLUME) || 1,
       stoch: calcularStochastic(highs, lows, closes),
       williams: calcularWilliams(highs, lows, closes),
@@ -923,7 +923,7 @@ async function analisarMercado() {
         <li>📊 Williams: ${indicadores.williams.toFixed(2)}</li>
         <li>💰 Preço: $${indicadores.close.toFixed(2)} ${
           indicadores.close>emaCurta?'🟢':'🔴'}</li>
-        <li>📶 Médias: EMA${CONFIG.PERIODOS.EMA_CURTA} ${indicadores.emaCurta.toFixed(2)} | EMA${CONFIG.PERIODOS.EMA_MEDIA} ${indicadores.emaMedia.toFixed(2)} | EMA${CONFIG.PERIODOS.EMA_LONGA} ${indicadores.emaLonga.toFixed(2)}</li>
+        <li>📶 Médias: EMA${CONFIG.PERIODOS.EMA_CURta} ${indicadores.emaCurta.toFixed(2)} | EMA${CONFIG.PERIODOS.EMA_MEDIA} ${indicadores.emaMedia.toFixed(2)} | EMA${CONFIG.PERIODOS.EMA_LONGA} ${indicadores.emaLonga.toFixed(2)}</li>
         <li>💹 Volume: ${indicadores.volume.toFixed(2)} vs Média ${indicadores.volumeMedia.toFixed(2)}</li>
         <li>📌 VWAP: ${indicadores.vwap.toFixed(2)} | ATR: ${indicadores.atr.toFixed(4)}</li>
         <li>🚦 SuperTrend: ${indicadores.superTrend.direcao>0?'ALTA':'BAIXA'} (${indicadores.superTrend.valor.toFixed(2)})</li>
@@ -1018,7 +1018,7 @@ async function backtestSimples(dias = 5) {
         emaMedia,
         emaLonga,
         ema200,
-        volume: slice[i-1].volume || 0,
+        volume: slice[i-1].volume,
         volumeMedia: calcularMedia.simples(volumes.slice(-CONFIG.PERIODOS.SMA_VOLUME), CONFIG.PERIODOS.SMA_VOLUME) || 1,
         stoch: calcularStochastic(highs, lows, closes),
         williams: calcularWilliams(highs, lows, closes),
