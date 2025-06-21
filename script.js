@@ -1,5 +1,5 @@
 // =============================================
-// CONFIGURAÇÕES GLOBAIS (ATUALIZADAS PARA CRYPTO INDEX)
+// CONFIGURAÇÕES GLOBAIS (ATUALIZADAS PARA 2025)
 // =============================================
 const state = {
   ultimos: [],
@@ -19,24 +19,31 @@ const state = {
   ],
   currentApiKeyIndex: 0,
   marketOpen: true,
-  noticiasRecentes: []
+  noticiasRecentes: [],
+  volumeProfile: [],
+  institutionalFlow: 0,
+  fairValueGap: { gap: false },
+  hiddenOrders: false,
+  tendenciaDetectada: "NEUTRA",
+  forcaTendencia: 0
 };
 
 const CONFIG = {
   API_ENDPOINTS: [
     "https://api.twelvedata.com",
     "https://min-api.cryptocompare.com",
-    "https://api.coingecko.com/api/v3"
+    "https://api.coingecko.com/api/v3",
+    "https://api.cryptorank.io/v1" // Novo endpoint institucional
   ],
   WS_ENDPOINT: "wss://stream.twelvedata.com/v1/quotes/price",
   PARES: {
-    CRYPTO_IDX: "BTC/USD"  // Alterado para Crypto Index (Bitcoin como proxy)
+    CRYPTO_IDX: "BTC/USD"
   },
   PERIODOS: {
-    RSI: 10,               // Período reduzido para maior sensibilidade
+    RSI: 10,
     STOCH: 11,
     WILLIAMS: 14,
-    EMA_CURTA: 8,          // Sequência de Fibonacci
+    EMA_CURTA: 8,
     EMA_MEDIA: 21,
     EMA_LONGA: 34,
     EMA_200: 200,
@@ -48,11 +55,14 @@ const CONFIG = {
     ANALISE_LATERAL: 30,
     VWAP: 20,
     ATR: 11,
-    SUPERTREND: 10,        // Novo indicador
-    VOLUME_PROFILE: 50     // Novo indicador
+    SUPERTREND: 10,
+    VOLUME_PROFILE: 50,
+    LIQUIDITY_ZONES: 20,   // Novo: Zonas de liquidez
+    FAIR_VALUE: 34,         // Novo: Período para Fair Value Gap
+    ADX: 14                // Novo: Período para força da tendência
   },
   LIMIARES: {
-    SCORE_ALTO: 82,        // Limiar elevado para cripto
+    SCORE_ALTO: 82,
     SCORE_MEDIO: 68,
     RSI_OVERBOUGHT: 68,
     RSI_OVERSOLD: 32,
@@ -60,41 +70,47 @@ const CONFIG = {
     STOCH_OVERSOLD: 15,
     WILLIAMS_OVERBOUGHT: -15,
     WILLIAMS_OVERSOLD: -85,
-    VOLUME_ALTO: 1.8,      // Volume mais significativo em cripto
-    VARIACAO_LATERAL: 0.4, // REDUZIDO para detectar menos laterais
+    VOLUME_ALTO: 1.8,
+    VARIACAO_LATERAL: 1.2,
     VWAP_DESVIO: 0.025,
-    ATR_LIMIAR: 0.04,      // AUMENTADO para maior sensibilidade
-    SUPERTREND_SENSIBILIDADE: 2.5
+    ATR_LIMIAR: 0.035,
+    SUPERTREND_SENSIBILIDADE: 2.5,
+    INSTITUTIONAL_FLOW: 2500000, // USD (novo)
+    ADX_TENDENCIA: 25            // Novo: Limiar para considerar tendência
   },
   PESOS: {
     RSI: 1.6,
     MACD: 2.0,
-    TENDENCIA: 2.0,        // Peso maior para tendência
-    VOLUME: 1.2,           // Volume mais importante em cripto
+    TENDENCIA: 2.0,
+    VOLUME: 1.2,
     STOCH: 1.1,
     WILLIAMS: 1.0,
     CONFIRMACAO: 1.2,
     LATERALIDADE: 1.5,
     VWAP: 1.2,
     VOLATILIDADE: 1.4,
-    SUPERTREND: 1.8,       // Novo peso
-    VOLUME_PROFILE: 1.3,   // Novo peso
-    DIVERGENCIA: 1.7       // Novo peso
+    SUPERTREND: 1.8,
+    VOLUME_PROFILE: 1.3,
+    DIVERGENCIA: 1.7,
+    LIQUIDITY: 1.8,         // Novo: Peso para zonas de liquidez
+    FAIR_VALUE: 1.7,        // Novo: Peso para Fair Value Gap
+    INSTITUTIONAL: 2.0,     // Novo: Peso para fluxo institucional
+    ADX: 1.8                // Novo: Peso para força da tendência
   },
   RISCO: {
-    MAX_RISCO_POR_OPERACAO: 0.01, // Risco reduzido para cripto
+    MAX_RISCO_POR_OPERACAO: 0.01,
     R_R_MINIMO: 2.0,
     ATR_MULTIPLICADOR_SL: 2.0,
     ATR_MULTIPLICADOR_TP: 4
   },
   MARKET_HOURS: {
-    CRYPTO_OPEN: 0,        // Mercado 24/7
+    CRYPTO_OPEN: 0,
     CRYPTO_CLOSE: 24
   }
 };
 
 // =============================================
-// FUNÇÕES UTILITÁRIAS (ATUALIZADAS)
+// FUNÇÕES UTILITÁRIAS (MANTIDAS)
 // =============================================
 function formatarTimer(segundos) {
   return `0:${segundos.toString().padStart(2, '0')}`;
@@ -104,18 +120,17 @@ function atualizarRelogio() {
   const elementoHora = document.getElementById("hora");
   if (elementoHora) {
     const now = new Date();
-    elementoHora.textContent = now.toLocaleTimeString("pt-BR", {
+    state.ultimaAtualizacao = now.toLocaleTimeString("pt-BR", {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit'
     });
-    
-    // Mercado de cripto opera 24/7
+    elementoHora.textContent = state.ultimaAtualizacao;
     state.marketOpen = true;
   }
 }
 
-function atualizarInterface(sinal, score) {
+function atualizarInterface(sinal, score, tendencia, forcaTendencia) {
   if (!state.marketOpen) return;
   
   const comandoElement = document.getElementById("comando");
@@ -136,8 +151,12 @@ function atualizarInterface(sinal, score) {
     else scoreElement.style.color = '#ff0000';
   }
   
-  const horaElement = document.getElementById("hora");
-  if (horaElement) horaElement.textContent = state.ultimaAtualizacao;
+  const tendenciaElement = document.getElementById("tendencia");
+  const forcaElement = document.getElementById("forca-tendencia");
+  if (tendenciaElement && forcaElement) {
+    tendenciaElement.textContent = tendencia;
+    forcaElement.textContent = `${forcaTendencia}%`;
+  }
 }
 
 function rotacionarApiKey() {
@@ -146,7 +165,7 @@ function rotacionarApiKey() {
 }
 
 // =============================================
-// INDICADORES TÉCNICOS (ATUALIZADOS PARA CRYPTO 2025)
+// INDICADORES TÉCNICOS (ATUALIZADOS PARA 2025)
 // =============================================
 const calcularMedia = {
   simples: (dados, periodo) => {
@@ -311,7 +330,6 @@ function calcularATR(dados, periodo = CONFIG.PERIODOS.ATR) {
   }
 }
 
-// SuperTrend (indicador essencial para cripto em 2025)
 function calcularSuperTrend(dados, periodo = CONFIG.PERIODOS.SUPERTREND, multiplicador = CONFIG.LIMIARES.SUPERTREND_SENSIBILIDADE) {
   try {
     if (!Array.isArray(dados) || dados.length < periodo) return { direcao: 0, valor: 0 };
@@ -328,19 +346,13 @@ function calcularSuperTrend(dados, periodo = CONFIG.PERIODOS.SUPERTREND, multipl
     
     if (dados.length > periodo) {
       const prev = dados[dados.length - 2];
-      const prevClose = prev.close;
       
-      // Lógica revisada para evitar flip-flop
-      if (prevClose > (prev.superTrend || upperBand)) {
+      if (prev.close > superTrend) {
         direcao = 1;
-        superTrend = Math.min(upperBand, prev.superTrend || upperBand);
-      } else if (prevClose < (prev.superTrend || lowerBand)) {
-        direcao = -1;
-        superTrend = Math.max(lowerBand, prev.superTrend || lowerBand);
+        superTrend = Math.max(upperBand, prev.superTrend || upperBand);
       } else {
-        // Manter direção atual
-        direcao = prev.direcao || 1;
-        superTrend = prev.superTrend || upperBand;
+        direcao = -1;
+        superTrend = Math.min(lowerBand, prev.superTrend || lowerBand);
       }
     }
     
@@ -351,7 +363,6 @@ function calcularSuperTrend(dados, periodo = CONFIG.PERIODOS.SUPERTREND, multipl
   }
 }
 
-// Volume Profile (áreas de valor)
 function calcularVolumeProfile(dados, periodo = CONFIG.PERIODOS.VOLUME_PROFILE) {
   try {
     if (!Array.isArray(dados) || dados.length < periodo) return { pvp: 0, vaHigh: 0, vaLow: 0 };
@@ -381,10 +392,51 @@ function calcularVolumeProfile(dados, periodo = CONFIG.PERIODOS.VOLUME_PROFILE) 
   }
 }
 
-// Detectar divergências (exaustão de tendência)
+// NOVO: Detectar Fair Value Gap (Ricardo Moura)
+function detectarFairValueGap(velas) {
+  if (velas.length < 3) return { gap: false };
+  
+  const ultima = velas[velas.length - 1];
+  const penultima = velas[velas.length - 2];
+  
+  // Gap de alta
+  if (ultima.low > penultima.high) {
+    return { gap: true, direcao: 'ALTA', tamanho: ultima.low - penultima.high };
+  } 
+  // Gap de baixa
+  else if (ultima.high < penultima.low) {
+    return { gap: true, direcao: 'BAIXA', tamanho: penultima.low - ultima.high };
+  }
+  
+  return { gap: false };
+}
+
+// NOVO: Calcular zonas de liquidez (Ricardo Moura)
+function calcularLiquidez(velas, periodo = CONFIG.PERIODOS.LIQUIDITY_ZONES) {
+  const slice = velas.slice(-periodo);
+  const highNodes = [];
+  const lowNodes = [];
+  
+  // Identificar nós de liquidez
+  for (let i = 3; i < slice.length - 3; i++) {
+    if (slice[i].high > slice[i-1].high && slice[i].high > slice[i+1].high) {
+      highNodes.push(slice[i].high);
+    }
+    if (slice[i].low < slice[i-1].low && slice[i].low < slice[i+1].low) {
+      lowNodes.push(slice[i].low);
+    }
+  }
+  
+  return {
+    resistencia: calcularMedia.simples(highNodes, highNodes.length),
+    suporte: calcularMedia.simples(lowNodes, lowNodes.length)
+  };
+}
+
+// NOVO: Detectar divergências ocultas (Ricardo Moura)
 function detectarDivergencias(closes, rsis, highs, lows) {
   try {
-    if (closes.length < 5 || rsis.length < 5) return { divergenciaRSI: false, divergenciaPreco: false };
+    if (closes.length < 5 || rsis.length < 5) return { divergenciaRSI: false, tipoDivergencia: "NENHUMA", divergenciaOculta: false };
     
     const ultimosCloses = closes.slice(-5);
     const ultimosRSIs = rsis.slice(-5);
@@ -401,127 +453,208 @@ function detectarDivergencias(closes, rsis, highs, lows) {
     const baixaRSI = ultimosRSIs[0] < ultimosRSIs[2] && ultimosRSIs[2] < ultimosRSIs[4];
     const divergenciaBaixa = altaPreco && baixaRSI;
     
+    // Divergência oculta de alta: preço faz fundo mais alto, RSI faz fundo mais baixo
+    const altaPrecoOculta = ultimosLows[0] > ultimosLows[2] && ultimosLows[2] > ultimosLows[4];
+    const baixaRSIOculta = ultimosRSIs[0] < ultimosRSIs[2] && ultimosRSIs[2] < ultimosRSIs[4];
+    const divergenciaOcultaAlta = altaPrecoOculta && baixaRSIOculta;
+    
+    // Divergência oculta de baixa: preço faz topo mais baixo, RSI faz topo mais alto
+    const baixaPrecoOculta = ultimosHighs[0] < ultimosHighs[2] && ultimosHighs[2] < ultimosHighs[4];
+    const altaRSIOculta = ultimosRSIs[0] > ultimosRSIs[2] && ultimosRSIs[2] > ultimosRSIs[4];
+    const divergenciaOcultaBaixa = baixaPrecoOculta && altaRSIOculta;
+    
     return {
       divergenciaRSI: divergenciaAlta || divergenciaBaixa,
-      tipoDivergencia: divergenciaAlta ? "ALTA" : divergenciaBaixa ? "BAIXA" : "NENHUMA"
+      divergenciaOculta: divergenciaOcultaAlta || divergenciaOcultaBaixa,
+      tipoDivergencia: divergenciaAlta ? "ALTA" : 
+                      divergenciaBaixa ? "BAIXA" : 
+                      divergenciaOcultaAlta ? "ALTA_OCULTA" : 
+                      divergenciaOcultaBaixa ? "BAIXA_OCULTA" : "NENHUMA"
     };
   } catch (e) {
     console.error("Erro na detecção de divergências:", e);
-    return { divergenciaRSI: false, divergenciaPreco: false };
+    return { divergenciaRSI: false, divergenciaOculta: false, tipoDivergencia: "NENHUMA" };
   }
 }
 
 // =============================================
-// SISTEMA DE DETECÇÃO DE TENDÊNCIA (REVISADO)
+// DETECÇÃO DE TENDÊNCIA APRIMORADA
 // =============================================
-function avaliarTendencia(closes, emaCurta, emaMedia, emaLonga, ema200, superTrend, atr, volume, volumeMedia) {
-  if (closes.length < CONFIG.PERIODOS.VELAS_CONFIRMACAO) return "NEUTRA";
+function calcularInclinacao(medias, periodo = 5) {
+  if (medias.length < periodo + 1) return 0;
   
-  const ultimoClose = closes[closes.length - 1];
-  const volumeForte = volume > volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO * 1.5;
+  const valores = medias.slice(-periodo);
+  const somaX = periodo * (periodo - 1) / 2;
+  const somaY = valores.reduce((a, b) => a + b, 0);
+  const somaXY = valores.reduce((a, b, i) => a + (b * i), 0);
+  const somaX2 = valores.reduce((a, b, i) => a + (i * i), 0);
   
-  // 1. Sistema hierárquico de detecção de tendência
-  const tendenciaSuperTrend = superTrend.direcao > 0 ? "ALTA" : "BAIXA";
+  const numerador = periodo * somaXY - somaX * somaY;
+  const denominador = periodo * somaX2 - somaX * somaX;
   
-  // 2. Força da tendência baseada em múltiplos fatores
-  let forca = 0;
+  return denominador !== 0 ? numerador / denominador : 0;
+}
+
+function calcularForcaTendencia(highs, lows, closes, periodo = CONFIG.PERIODOS.ADX) {
+  if (closes.length < periodo * 2) return 0;
   
-  // Fator 1: Posição relativa às EMAs
-  if (ultimoClose > emaCurta && emaCurta > emaMedia && emaMedia > emaLonga) forca += 3;
-  else if (ultimoClose < emaCurta && emaCurta < emaMedia && emaMedia < emaLonga) forca += 3;
+  let dmPlus = 0;
+  let dmMinus = 0;
+  let trSum = 0;
   
-  // Fator 2: Distância da EMA 200
-  const distanciaEMA200 = Math.abs(ultimoClose - ema200) / ema200;
-  if (distanciaEMA200 > 0.03) forca += 2;
-  
-  // Fator 3: Volume forte na direção da tendência
-  if (volumeForte) forca += 2;
-  
-  // Fator 4: Confirmação do SuperTrend
-  if ((tendenciaSuperTrend === "ALTA" && ultimoClose > superTrend.valor * 1.005) ||
-      (tendenciaSuperTrend === "BAIXA" && ultimoClose < superTrend.valor * 0.995)) {
-    forca += 2;
+  for (let i = 1; i <= periodo; i++) {
+    const idx = closes.length - i;
+    const high = highs[idx];
+    const low = lows[idx];
+    const prevClose = closes[idx - 1];
+    
+    // True Range
+    const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+    trSum += tr;
+    
+    // Directional Movement
+    const upMove = high - highs[idx - 1];
+    const downMove = lows[idx - 1] - low;
+    
+    if (upMove > downMove && upMove > 0) {
+      dmPlus += upMove;
+    } else if (downMove > upMove && downMove > 0) {
+      dmMinus += downMove;
+    }
   }
   
-  // 3. Verificar se o mercado está lateral (critérios mais restritos)
-  if (detectarMercadoLateral(closes, atr)) {
+  const diPlus = (dmPlus / trSum) * 100;
+  const diMinus = (dmMinus / trSum) * 100;
+  const dx = (Math.abs(diPlus - diMinus) / (diPlus + diMinus)) * 100;
+  
+  return Math.min(100, Math.round(dx));
+}
+
+function avaliarTendencia(closes, highs, lows, emaCurta, emaMedia, emaLonga, ema200, superTrend, atr) {
+  if (closes.length < CONFIG.PERIODOS.VELAS_CONFIRMACAO) return { tendencia: "NEUTRA", forca: 0 };
+  
+  // Calcular inclinação das médias
+  const inclinacaoCurta = calcularInclinacao(emaCurta);
+  const inclinacaoMedia = calcularInclinacao(emaMedia);
+  const inclinacaoLonga = calcularInclinacao(emaLonga);
+  
+  // Calcular força da tendência
+  const forcaTendencia = calcularForcaTendencia(highs, lows, closes);
+  
+  const ultimoClose = closes[closes.length - 1];
+  
+  // Critérios para tendência de alta
+  const criteriosAlta = [
+    inclinacaoCurta > 0.1,
+    inclinacaoMedia > 0.05,
+    inclinacaoLonga > 0.02,
+    forcaTendencia > CONFIG.LIMIARES.ADX_TENDENCIA,
+    ultimoClose > emaCurta[emaCurta.length-1],
+    emaCurta[emaCurta.length-1] > emaMedia[emaMedia.length-1],
+    emaMedia[emaMedia.length-1] > emaLonga[emaLonga.length-1],
+    superTrend.direcao > 0 && ultimoClose > superTrend.valor
+  ];
+  
+  // Critérios para tendência de baixa
+  const criteriosBaixa = [
+    inclinacaoCurta < -0.1,
+    inclinacaoMedia < -0.05,
+    inclinacaoLonga < -0.02,
+    forcaTendencia > CONFIG.LIMIARES.ADX_TENDENCIA,
+    ultimoClose < emaCurta[emaCurta.length-1],
+    emaCurta[emaCurta.length-1] < emaMedia[emaMedia.length-1],
+    emaMedia[emaMedia.length-1] < emaLonga[emaLonga.length-1],
+    superTrend.direcao < 0 && ultimoClose < superTrend.valor
+  ];
+  
+  // Contar critérios atendidos
+  const countAlta = criteriosAlta.filter(Boolean).length;
+  const countBaixa = criteriosBaixa.filter(Boolean).length;
+  
+  // Determinar tendência
+  if (countAlta >= 6) {
+    return { tendencia: "FORTE_ALTA", forca: forcaTendencia };
+  } else if (countBaixa >= 6) {
+    return { tendencia: "FORTE_BAIXA", forca: forcaTendencia };
+  } else if (countAlta >= 4) {
+    return { tendencia: "ALTA", forca: forcaTendencia };
+  } else if (countBaixa >= 4) {
+    return { tendencia: "BAIXA", forca: forcaTendencia };
+  } else if (forcaTendencia < 20) {
     state.contadorLaterais++;
-    // Só classificar como lateral se não houver tendência forte
-    if (forca < 4) return "LATERAL";
+    return { tendencia: "LATERAL", forca: forcaTendencia };
   }
   
   state.contadorLaterais = 0;
-  
-  // 4. Classificação final da tendência
-  if (forca >= 6) {
-    return tendenciaSuperTrend === "ALTA" ? "FORTE_ALTA" : "FORTE_BAIXA";
-  }
-  
-  if (forca >= 4) {
-    return tendenciaSuperTrend;
-  }
-  
-  // 5. Tendência fraca ou divergências
-  const tendenciaBasica = emaCurta > emaMedia ? "ALTA" : "BAIXA";
-  
-  return tendenciaBasica;
-}
-
-function detectarMercadoLateral(closes, atr) {
-  if (closes.length < CONFIG.PERIODOS.ANALISE_LATERAL) return false;
-  
-  const ultimosPrecos = closes.slice(-CONFIG.PERIODOS.ANALISE_LATERAL);
-  const maximo = Math.max(...ultimosPrecos);
-  const minimo = Math.min(...ultimosPrecos);
-  const variacao = ((maximo - minimo) / minimo) * 100;
-  
-  // Critério mais restrito para lateralidade
-  return variacao < (CONFIG.LIMIARES.VARIACAO_LATERAL * atr * 100);
+  return { tendencia: "NEUTRA", forca: forcaTendencia };
 }
 
 // =============================================
-// SISTEMA DE DECISÃO (ATUALIZADO PARA CRYPTO 2025)
+// SISTEMA DE DECISÃO (ATUALIZADO PARA 2025)
 // =============================================
 function calcularScore(indicadores, divergencias) {
   let score = 50;
 
-  // Análise de RSI com detecção de divergência
-  if (divergencias.divergenciaRSI) {
-    score += divergencias.tipoDivergencia === "ALTA" ? 
-      25 * CONFIG.PESOS.DIVERGENCIA : 
-      -25 * CONFIG.PESOS.DIVERGENCIA;
+  // Fator Fair Value Gap (Ricardo Moura)
+  if (state.fairValueGap.gap) {
+    score += state.fairValueGap.direcao === 'ALTA' ? 
+      15 * CONFIG.PESOS.FAIR_VALUE : 
+      -15 * CONFIG.PESOS.FAIR_VALUE;
+  }
+  
+  // Fator de Liquidez (Ricardo Moura)
+  const distanciaSuporte = Math.abs(indicadores.close - indicadores.liquidez.suporte);
+  const distanciaResistencia = Math.abs(indicadores.close - indicadores.liquidez.resistencia);
+  if (distanciaSuporte < distanciaResistencia) {
+    score += 12 * CONFIG.PESOS.LIQUIDITY;
   } else {
-    if (indicadores.rsi < CONFIG.LIMIARES.RSI_OVERSOLD) {
-      score += 25 * CONFIG.PESOS.RSI;
-    } else if (indicadores.rsi > CONFIG.LIMIARES.RSI_OVERBOUGHT) {
-      score -= 25 * CONFIG.PESOS.RSI;
-    } else if (indicadores.rsi < 45) score += 10 * CONFIG.PESOS.RSI;
-    else if (indicadores.rsi > 55) score -= 10 * CONFIG.PESOS.RSI;
+    score -= 8 * CONFIG.PESOS.LIQUIDITY;
+  }
+  
+  // Fluxo Institucional (Ricardo Moura)
+  if (state.institutionalFlow > CONFIG.LIMIARES.INSTITUTIONAL_FLOW) {
+    score += 18 * CONFIG.PESOS.INSTITUTIONAL;
+  } else if (state.institutionalFlow < -CONFIG.LIMIARES.INSTITUTIONAL_FLOW) {
+    score -= 18 * CONFIG.Pesos.INSTITUTIONAL;
   }
 
-  // Análise MACD
-  score += (Math.min(Math.max(indicadores.macd.histograma * 10, -15), 15) * CONFIG.PESOS.MACD);
+  // Análise de divergências (Ricardo Moura)
+  if (divergencias.divergenciaOculta) {
+    score += divergencias.tipoDivergencia.includes("ALTA") ? 
+      20 * CONFIG.PESOS.DIVERGENCIA : 
+      -20 * CONFIG.PESOS.DIVERGENCIA;
+  } else if (divergencias.divergenciaRSI) {
+    score += divergencias.tipoDivergencia === "ALTA" ? 
+      15 * CONFIG.PESOS.DIVERGENCIA : 
+      -15 * CONFIG.PESOS.DIVERGENCIA;
+  }
 
-  // Análise de Tendência (peso maior para tendências fortes)
-  switch(indicadores.tendencia) {
+  // Análise de Tendência (com peso maior e força da tendência)
+  switch(indicadores.tendencia.tendencia) {
     case "FORTE_ALTA": 
-      score += 30 * CONFIG.PESOS.TENDENCIA;
-      if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO * 1.5) score += 10;
+      score += 30 * CONFIG.PESOS.TENDENCIA; 
+      score += Math.min(indicadores.tendencia.forca * 0.5, 15);
       break;
-    case "ALTA": score += 15 * CONFIG.PESOS.TENDENCIA; break;
+    case "ALTA": 
+      score += 20 * CONFIG.PESOS.TENDENCIA; 
+      score += Math.min(indicadores.tendencia.forca * 0.3, 10);
+      break;
     case "FORTE_BAIXA": 
-      score -= 30 * CONFIG.PESOS.TENDENCIA;
-      if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO * 1.5) score -= 10;
+      score -= 30 * CONFIG.PESOS.TENDENCIA; 
+      score -= Math.min(indicadores.tendencia.forca * 0.5, 15);
       break;
-    case "BAIXA": score -= 15 * CONFIG.PESOS.TENDENCIA; break;
+    case "BAIXA": 
+      score -= 20 * CONFIG.PESOS.TENDENCIA; 
+      score -= Math.min(indicadores.tendencia.forca * 0.3, 10);
+      break;
     case "LATERAL": 
-      score -= Math.min(state.contadorLaterais, 15) * CONFIG.PESOS.LATERALIDADE * 1.2;
+      score -= Math.min(state.contadorLaterais, 15) * CONFIG.PESOS.LATERALIDADE; 
       break;
   }
 
   // Análise de Volume
   if (indicadores.volume > indicadores.volumeMedia * CONFIG.LIMIARES.VOLUME_ALTO) {
-    score += (indicadores.tendencia.includes("ALTA") ? 10 : -10) * CONFIG.PESOS.VOLUME;
+    score += (indicadores.tendencia.tendencia.includes("ALTA") ? 10 : -10) * CONFIG.PESOS.VOLUME;
   }
 
   // Análise Stochastic
@@ -542,29 +675,17 @@ function calcularScore(indicadores, divergencias) {
     score -= 10 * CONFIG.PESOS.WILLIAMS; 
   }
 
-  // Análise VWAP
+  // Análise VWAP (Ricardo Moura)
   const vwapDesvio = Math.abs(indicadores.close - indicadores.vwap) / indicadores.vwap;
   if (vwapDesvio > CONFIG.LIMIARES.VWAP_DESVIO) {
     score += (indicadores.close > indicadores.vwap ? 8 : -8) * CONFIG.PESOS.VWAP;
   }
 
-  // Análise de Volatilidade (ATR)
-  if (indicadores.atr > CONFIG.LIMIARES.ATR_LIMIAR) {
-    score += 5 * CONFIG.PESOS.VOLATILIDADE;
-  }
-
-  // SuperTrend
-  if (indicadores.superTrend.direcao > 0) {
-    score += 10 * CONFIG.PESOS.SUPERTREND;
-  } else if (indicadores.superTrend.direcao < 0) {
-    score -= 10 * CONFIG.PESOS.SUPERTREND;
-  }
-
-  // Volume Profile
+  // Volume Profile (Ricardo Moura)
   if (indicadores.close > indicadores.volumeProfile.vaHigh) {
-    score += 8 * CONFIG.PESOS.VOLUME_PROFILE;
+    score += 10 * CONFIG.PESOS.VOLUME_PROFILE;
   } else if (indicadores.close < indicadores.volumeProfile.vaLow) {
-    score -= 8 * CONFIG.PESOS.VOLUME_PROFILE;
+    score -= 10 * CONFIG.PESOS.VOLUME_PROFILE;
   }
 
   // Confirmações
@@ -573,9 +694,10 @@ function calcularScore(indicadores, divergencias) {
     Math.abs(indicadores.macd.histograma) > 0.05,
     indicadores.stoch.k < 30 || indicadores.stoch.k > 70,
     indicadores.williams < -70 || indicadores.williams > -30,
-    indicadores.tendencia !== "LATERAL",
+    indicadores.tendencia.tendencia !== "LATERAL",
     vwapDesvio > CONFIG.LIMIARES.VWAP_DESVIO * 0.8,
-    indicadores.superTrend.direcao !== 0
+    indicadores.superTrend.direcao !== 0,
+    state.institutionalFlow > 0
   ].filter(Boolean).length;
 
   score += confirmacoes * 5 * CONFIG.PESOS.CONFIRMACAO;
@@ -590,27 +712,60 @@ function calcularScore(indicadores, divergencias) {
 }
 
 function determinarSinal(score, tendencia, divergencias) {
-  // Priorizar divergências
-  if (divergencias.divergenciaRSI) {
-    return divergencias.tipoDivergencia === "ALTA" ? "CALL" : "PUT";
+  // Estratégia Ricardo Moura: priorizar divergências ocultas
+  if (divergencias.divergenciaOculta) {
+    return divergencias.tipoDivergencia.includes("ALTA") ? "CALL" : "PUT";
   }
   
-  // Tendências fortes têm prioridade
-  if (tendencia === "FORTE_ALTA" && score >= CONFIG.LIMIARES.SCORE_MEDIO) return "CALL";
-  if (tendencia === "FORTE_BAIXA" && score >= CONFIG.LIMIARES.SCORE_MEDIO) return "PUT";
+  if (tendencia === "LATERAL") {
+    return score > 85 ? "CALL" : "ESPERAR";
+  }
   
-  // Tendências médias exigem score mais alto
-  if (tendencia === "ALTA" && score >= CONFIG.LIMIARES.SCORE_ALTO) return "CALL";
-  if (tendencia === "BAIXA" && score >= CONFIG.LIMIARES.SCORE_ALTO) return "PUT";
+  if (score >= CONFIG.LIMIARES.SCORE_ALTO) {
+    return tendencia.includes("ALTA") ? "CALL" : "PUT";
+  }
   
-  // Lateralidade exige score muito alto
-  if (tendencia === "LATERAL" && score > 88) return "CALL";
+  if (score >= CONFIG.LIMIARES.SCORE_MEDIO) {
+    if (tendencia === "NEUTRA") return "ESPERAR";
+    return tendencia.includes("ALTA") ? "CALL" : "PUT";
+  }
   
   return "ESPERAR";
 }
 
 // =============================================
-// CORE DO SISTEMA (ATUALIZADO PARA CRYPTO)
+// NOVAS FUNÇÕES DE DADOS INSTITUCIONAIS
+// =============================================
+async function obterFluxoInstitucional() {
+  try {
+    const response = await fetch('https://api.cryptorank.io/v1/currencies/1?api_key=YOUR_API_KEY');
+    if (!response.ok) throw new Error("Falha na API");
+    
+    const data = await response.json();
+    return data.data.values.USD.flow;
+  } catch (e) {
+    console.error("Erro fluxo institucional:", e);
+    return 0;
+  }
+}
+
+async function detectarOrdensOcultas() {
+  try {
+    const response = await fetch('https://api.cryptocompare.com/data/ob/l1/top?fsym=BTC&tsym=USD');
+    if (!response.ok) throw new Error("Falha na API");
+    
+    const data = await response.json();
+    const largeOrders = data.Data.ASK.filter(order => order.amount > 10)
+                       .concat(data.Data.BID.filter(order => order.amount > 10));
+    return largeOrders.length > 5;
+  } catch (e) {
+    console.error("Erro ordens ocultas:", e);
+    return false;
+  }
+}
+
+// =============================================
+// CORE DO SISTEMA (ATUALIZADO PARA 2025)
 // =============================================
 async function obterDadosCrypto() {
   for (const endpoint of CONFIG.API_ENDPOINTS) {
@@ -653,8 +808,8 @@ async function obterDadosCrypto() {
           return dados.prices.map((v, i) => ({
             time: new Date(v[0]).toISOString(),
             open: i > 0 ? dados.prices[i-1][1] : v[1],
-            high: v[1] * 1.001, // Aproximação
-            low: v[1] * 0.999,  // Aproximação
+            high: v[1] * 1.001,
+            low: v[1] * 0.999,
             close: v[1],
             volume: dados.total_volumes[i][1]
           })).slice(-150);
@@ -688,8 +843,10 @@ async function analisarMercado() {
   if (state.leituraEmAndamento || !state.marketOpen) return;
   state.leituraEmAndamento = true;
   try {
-    // Buscar notícias recentes
+    // Buscar dados institucionais (Ricardo Moura)
     state.noticiasRecentes = await buscarNoticiasCrypto();
+    state.institutionalFlow = await obterFluxoInstitucional();
+    state.hiddenOrders = await detectarOrdensOcultas();
     
     const dados = await obterDadosCrypto();
     const velaAtual = dados[dados.length - 1];
@@ -697,6 +854,9 @@ async function analisarMercado() {
     const highs = dados.map(v => v.high);
     const lows = dados.map(v => v.low);
     const volumes = dados.map(v => v.volume);
+
+    // Detecção Fair Value Gap (Ricardo Moura)
+    state.fairValueGap = detectarFairValueGap(dados.slice(-3));
 
     const emaCurtaArray = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_CURTA);
     const emaMediaArray = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_MEDIA);
@@ -710,8 +870,18 @@ async function analisarMercado() {
     const atr = calcularATR(dados);
     const superTrend = calcularSuperTrend(dados);
     const volumeProfile = calcularVolumeProfile(dados);
-    const divergencias = detectarDivergencias(closes, dados.map((_, i) => calcularRSI(closes.slice(0, i+1))), highs, lows);
-    const volumeMedia = calcularMedia.simples(volumes, CONFIG.PERIODOS.SMA_VOLUME) || 1;
+    const liquidez = calcularLiquidez(dados);
+    
+    // Detecção de divergências melhorada (Ricardo Moura)
+    const rsiHistory = [];
+    for (let i = CONFIG.PERIODOS.RSI; i <= closes.length; i++) {
+      rsiHistory.push(calcularRSI(closes.slice(0, i)));
+    }
+    const divergencias = detectarDivergencias(closes, rsiHistory, highs, lows);
+
+    // Avaliação de tendência aprimorada
+    const tendencia = avaliarTendencia(closes, highs, lows, emaCurtaArray, emaMediaArray, emaLongaArray, ema200, superTrend, atr);
+    state.tendenciaDetectada = tendencia.tendencia;
 
     const indicadores = {
       rsi: calcularRSI(closes),
@@ -721,25 +891,17 @@ async function analisarMercado() {
       emaLonga,
       ema200,
       volume: velaAtual.volume,
-      volumeMedia,
+      volumeMedia: calcularMedia.simples(volumes, CONFIG.PERIODOS.SMA_VOLUME) || 1,
       stoch: calcularStochastic(highs, lows, closes),
       williams: calcularWilliams(highs, lows, closes),
       vwap: calcularVWAP(dados),
       atr,
       superTrend,
       volumeProfile,
+      liquidez, // Novo: Zonas de liquidez
       close: velaAtual.close,
-      tendencia: avaliarTendencia(
-        closes, 
-        emaCurta, 
-        emaMedia, 
-        emaLonga, 
-        ema200, 
-        superTrend, 
-        atr,
-        velaAtual.volume,
-        volumeMedia
-      )
+      tendencia: state.tendenciaDetectada,
+      forcaTendencia: tendencia.forca
     };
 
     const score = calcularScore(indicadores, divergencias);
@@ -749,14 +911,14 @@ async function analisarMercado() {
     state.ultimoScore = score;
     state.ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR");
 
-    atualizarInterface(sinal, score);
+    atualizarInterface(sinal, score, state.tendenciaDetectada, tendencia.forca);
 
     const criteriosElement = document.getElementById("criterios");
     if (criteriosElement) {
       criteriosElement.innerHTML = `
-        <li>📊 Tendência: ${indicadores.tendencia.replace('_',' ')} ${
-          indicadores.tendencia.includes("ALTA") ? '🟢' :
-          indicadores.tendencia.includes("BAIXA") ? '🔴' : '🟡'}</li>
+        <li>📊 Tendência: ${state.tendenciaDetectada.replace('_',' ')} ${
+          state.tendenciaDetectada.includes("ALTA") ? '🟢' :
+          state.tendenciaDetectada.includes("BAIXA") ? '🔴' : '🟡'}</li>
         <li>📉 RSI: ${indicadores.rsi.toFixed(2)} ${
           indicadores.rsi < CONFIG.LIMIARES.RSI_OVERSOLD ? '🔻' : 
           indicadores.rsi > CONFIG.LIMIARES.RSI_OVERBOUGHT ? '🔺' : ''}</li>
@@ -771,7 +933,12 @@ async function analisarMercado() {
         <li>📌 VWAP: ${indicadores.vwap.toFixed(2)} | ATR: ${indicadores.atr.toFixed(4)}</li>
         <li>🚦 SuperTrend: ${indicadores.superTrend.direcao>0?'ALTA':'BAIXA'} (${indicadores.superTrend.valor.toFixed(2)})</li>
         <li>📊 Volume Profile: PVP ${indicadores.volumeProfile.pvp.toFixed(2)} | VA ${indicadores.volumeProfile.vaLow.toFixed(2)}-${indicadores.volumeProfile.vaHigh.toFixed(2)}</li>
-        <li>⚠️ Divergência: ${divergencias.divergenciaRSI ? divergencias.tipoDivergencia : 'Nenhuma'}</li>
+        <li>🪙 Liquidez: S ${indicadores.liquidez.suporte.toFixed(2)} | R ${indicadores.liquidez.resistencia.toFixed(2)}</li>
+        <li>⚠️ Divergência: ${divergencias.tipoDivergencia}</li>
+        <li>🏦 Fluxo Institucional: $${(state.institutionalFlow/1000000).toFixed(2)}M</li>
+        <li>⚡ Fair Value Gap: ${state.fairValueGap.gap ? state.fairValueGap.direcao + ' ($' + state.fairValueGap.tamanho.toFixed(2) + ')' : 'Não'}</li>
+        <li>🕵️‍♂️ Ordens Ocultas: ${state.hiddenOrders ? 'Sim' : 'Não'}</li>
+        <li>💪 Força Tendência: ${tendencia.forca}%</li>
       `;
     }
 
@@ -783,7 +950,7 @@ async function analisarMercado() {
     state.tentativasErro = 0;
   } catch (e) {
     console.error("Erro na análise:", e);
-    atualizarInterface("ERRO", 0);
+    atualizarInterface("ERRO", 0, "ERRO", 0);
     if (++state.tentativasErro>3) setTimeout(()=>location.reload(),10000);
   } finally {
     state.leituraEmAndamento = false;
@@ -791,7 +958,7 @@ async function analisarMercado() {
 }
 
 // =============================================
-// BACKTESTING BÁSICO (ATUALIZADO)
+// BACKTESTING (ATUALIZADO COM ESTRATÉGIA RICARDO MOURA)
 // =============================================
 async function backtestSimples(dias = 5) {
   try {
@@ -827,8 +994,23 @@ async function backtestSimples(dias = 5) {
       const ema200 = calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_200).slice(-1)[0];
       const atr = calcularATR(slice);
       const superTrend = calcularSuperTrend(slice);
-      const volumeMedia = calcularMedia.simples(volumes.slice(-CONFIG.PERIODOS.SMA_VOLUME), CONFIG.PERIODOS.SMA_VOLUME) || 1;
-      const divergencias = detectarDivergencias(closes, closes.map((_, idx) => calcularRSI(closes.slice(0, idx+1))), highs, lows);
+      const volumeProfile = calcularVolumeProfile(slice);
+      const liquidez = calcularLiquidez(slice);
+      
+      // Detecção de divergências
+      const rsiHistory = [];
+      for (let j = CONFIG.PERIODOS.RSI; j <= closes.length; j++) {
+        rsiHistory.push(calcularRSI(closes.slice(0, j)));
+      }
+      const divergencias = detectarDivergencias(closes, rsiHistory, highs, lows);
+      
+      // Avaliação de tendência aprimorada
+      const tendencia = avaliarTendencia(closes, highs, lows, 
+        calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_CURTA),
+        calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_MEDIA),
+        calcularMedia.exponencial(closes, CONFIG.PERIODOS.EMA_LONGA),
+        ema200, superTrend, atr
+      );
       
       const indicadores = {
         rsi: calcularRSI(closes),
@@ -838,24 +1020,17 @@ async function backtestSimples(dias = 5) {
         emaLonga,
         ema200,
         volume: slice[i-1].volume,
-        volumeMedia,
+        volumeMedia: calcularMedia.simples(volumes.slice(-CONFIG.PERIODOS.SMA_VOLUME), CONFIG.PERIODOS.SMA_VOLUME) || 1,
         stoch: calcularStochastic(highs, lows, closes),
         williams: calcularWilliams(highs, lows, closes),
         vwap: calcularVWAP(slice),
         atr,
         superTrend,
+        volumeProfile,
+        liquidez,
         close: slice[i-1].close,
-        tendencia: avaliarTendencia(
-          closes, 
-          emaCurta, 
-          emaMedia, 
-          emaLonga, 
-          ema200, 
-          superTrend, 
-          atr,
-          slice[i-1].volume,
-          volumeMedia
-        )
+        tendencia: tendencia.tendencia,
+        forcaTendencia: tendencia.forca
       };
       
       const score = calcularScore(indicadores, divergencias);
@@ -925,13 +1100,20 @@ function iniciarAplicativo() {
   sincronizarTimer();
   analisarMercado();
   
-  // Adiciona botão para backtesting (não altera a interface existente)
+  // Adiciona botão para backtesting
   const backtestBtn = document.createElement('button');
   backtestBtn.textContent = 'Executar Backtest (5 dias)';
   backtestBtn.style.position = 'fixed';
   backtestBtn.style.bottom = '10px';
   backtestBtn.style.right = '10px';
   backtestBtn.style.zIndex = '1000';
+  backtestBtn.style.padding = '10px';
+  backtestBtn.style.backgroundColor = '#2c3e50';
+  backtestBtn.style.color = 'white';
+  backtestBtn.style.border = 'none';
+  backtestBtn.style.borderRadius = '5px';
+  backtestBtn.style.cursor = 'pointer';
+  
   backtestBtn.onclick = () => {
     backtestBtn.textContent = 'Calculando...';
     backtestSimples().then(() => {
