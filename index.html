@@ -1,76 +1,88 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <title>TX1 👨🏽‍💻💹 | IDX M1</title>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Análise Técnica - IDX M1 (2025)</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
-    <div class="painel-controle">
-      <h1>TX1 👨🏽‍💻💹 | IDX M1</h1>
-      
-      <div class="status-container">
-        <div class="status-item">
-          <span class="status-label">Comando Atual</span>
-          <span id="comando" class="esperar">ESPERAR</span>
+    <div class="container">
+        <header>
+            <h1>Análise Técnica - IDX M1 (2025)</h1>
+            <p class="subtitle">Sistema avançado de geração de sinais com EMA, RSI, Volume e ATR</p>
+        </header>
+        
+        <div class="dashboard">
+            <div class="panel">
+                <h2 class="panel-title"><i>📊</i> Sinal Atual</h2>
+                <div class="signal-display">
+                    <div id="comando" class="signal wait">ESPERAR ✋</div>
+                    <div class="progress-container">
+                        <div id="barra-progresso" class="progress-bar" style="width: 0%;"></div>
+                    </div>
+                    <div class="score"><span id="score">0%</span> de confiança</div>
+                </div>
+                
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-label">Próxima análise em</div>
+                        <div class="info-value" id="timer">60s</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Última atualização</div>
+                        <div class="info-value" id="hora">--:--:--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">WINs</div>
+                        <div class="info-value" id="wins">0</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">LOSSes</div>
+                        <div class="info-value" id="losses">0</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h2 class="panel-title"><i>🔍</i> Critérios de Decisão</h2>
+                <ul id="criterios" class="criteria-list">
+                    <li>Inicializando sistema...</li>
+                </ul>
+            </div>
+            
+            <div class="panel history-panel">
+                <h2 class="panel-title"><i>📝</i> Histórico e Estatísticas</h2>
+                <div class="history-grid">
+                    <div>
+                        <h3>Últimos Sinais</h3>
+                        <ul id="ultimos" class="history-list">
+                            <li>Nenhum sinal registrado</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3>Configurações Ativas</h3>
+                        <div style="margin-top: 15px;">
+                            <p><span class="config-badge">EMA Rápida: 3</span> <span class="config-badge">EMA Média: 13</span> <span class="config-badge">EMA Longa: 34</span></p>
+                            <p><span class="config-badge">RSI: 7</span> <span class="config-badge">RSI Alto: 72</span> <span class="config-badge">RSI Baixo: 30</span></p>
+                            <p><span class="config-badge">Volume Lookback: 4</span> <span class="config-badge">Volume Threshold: 2.5</span></p>
+                            <p><span class="config-badge">ATR: 14</span> <span class="config-badge">ATR Threshold: 0.015</span></p>
+                            <p><span class="config-badge">Horários Preferenciais: 12-15h, 15-18h, 21-24h</span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
         
-        <div class="status-item">
-          <span class="status-label">Score de Confiança</span>
-          <span id="score" class="status-value">--%</span>
+        <div class="footer">
+            <p>Sistema de análise técnica para IDX M1 - Versão 2025.1 | Desenvolvido com algoritmos avançados de trading</p>
+            <p>⚠️ Este é um sistema demonstrativo para fins educacionais. Não deve ser utilizado para operações reais.</p>
         </div>
-        
-        <div class="status-item">
-          <span class="status-label">Próxima Leitura</span>
-          <span id="timer" class="status-value">60s</span>
-        </div>
-        
-        <div class="status-item">
-          <span class="status-label">Última Análise</span>
-          <span id="hora" class="status-value">--:--:--</span>
-        </div>
-      </div>
-      
-      <div class="progresso">
-        <div id="barra-progresso" class="barra-progresso" style="width: 0%"></div>
-      </div>
-      
-      <div class="secao">
-        <h3>📊 Critérios Técnicos</h3>
-        <ul id="criterios">
-          <li>Inicializando sistema de análise...</li>
-        </ul>
-      </div>
-      
-      <div class="secao">
-        <h3>📈 Últimos Sinais</h3>
-        <ul id="ultimos">
-          <li>Nenhum sinal registrado ainda</li>
-        </ul>
-      </div>
-      
-      <div class="secao">
-        <h3>📝 Registro de Operações</h3>
-        <div class="botoes">
-          <button id="btn-win" onclick="registrar('WIN')">WIN ✅</button>
-          <button id="btn-loss" onclick="registrar('LOSS')">LOSS ❌</button>
-        </div>
-        <span id="historico">0 WIN / 0 LOSS</span>
-      </div>
     </div>
     
-    <div class="grafico-container">
-      <div class="info-grafico">IDX M1 - Gráfico em Tempo Real</div>
-      <iframe class="grafico" 
-              src="https://s.tradingview.com/widgetembed/?symbol=CRYPTOCAP:IDX&interval=1&theme=dark&style=1&locale=br&toolbar_bg=0a121f&enable_publishing=false&hide_top_toolbar=true&hide_legend=false&save_image=false"
-              frameborder="0"></iframe>
-    </div>
-  </div>
-  
-  <audio id="som-call" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg" preload="auto"></audio>
-  <audio id="som-put" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
-  
-  <script src="script.js"></script>
+    <audio id="som-call" src="https://assets.mixkit.co/sfx/preview/mixkit-winning-chimes-2015.mp3"></audio>
+    <audio id="som-put" src="https://assets.mixkit.co/sfx/preview/mixkit-warning-alarm-688.mp3"></audio>
+
+    <script src="script.js"></script>
 </body>
 </html>
