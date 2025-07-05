@@ -3,71 +3,138 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Análise Técnica - IDX M1 (2025)</title>
+    <title>Sistema de Trading Real - Stockity/IDX</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Análise Técnica - IDX M1 (2025)</h1>
-            <p class="subtitle">Sistema avançado de geração de sinais com EMA, RSI, Volume e ATR</p>
+            <div class="logo">
+                <div class="logo-icon">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <div class="logo-text">IDX Trading System</div>
+            </div>
+            <div class="exchange-info">
+                <div>
+                    <div class="info-label"><i class="fas fa-exchange-alt"></i> IDX/USDT</div>
+                    <div class="price-display">$3.5724</div>
+                </div>
+                <div>
+                    <div class="info-label"><i class="fas fa-arrow-trend-up"></i> 24h Change</div>
+                    <div class="price-change">+2.45%</div>
+                </div>
+                <div>
+                    <div class="info-label"><i class="fas fa-volume-high"></i> Volume</div>
+                    <div class="price-display">$42.8M</div>
+                </div>
+            </div>
         </header>
         
         <div class="dashboard">
             <div class="panel">
-                <h2 class="panel-title"><i>📊</i> Sinal Atual</h2>
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i class="fas fa-signal"></i> Sinal de Trading
+                    </div>
+                    <div class="panel-actions">
+                        <button class="btn btn-outline" id="btn-settings">
+                            <i class="fas fa-cog"></i> Configurações
+                        </button>
+                    </div>
+                </div>
                 <div class="signal-display">
-                    <div id="comando" class="signal wait">ESPERAR ✋</div>
+                    <div id="comando" class="signal wait">AGUARDANDO SINAL</div>
                     <div class="progress-container">
                         <div id="barra-progresso" class="progress-bar" style="width: 0%;"></div>
                     </div>
-                    <div class="score"><span id="score">0%</span> de confiança</div>
+                    <div class="score-display">Confiança: <span id="score">0%</span></div>
                 </div>
                 
                 <div class="info-grid">
-                    <div class="info-item">
-                        <div class="info-label">Próxima análise em</div>
-                        <div class="info-value" id="timer">60s</div>
+                    <div class="info-card">
+                        <div class="info-label"><i class="fas fa-clock"></i> Próxima análise</div>
+                        <div class="info-value" id="timer">45s</div>
                     </div>
-                    <div class="info-item">
-                        <div class="info-label">Última atualização</div>
+                    <div class="info-card">
+                        <div class="info-label"><i class="fas fa-sync-alt"></i> Última atualização</div>
                         <div class="info-value" id="hora">--:--:--</div>
                     </div>
-                    <div class="info-item">
-                        <div class="info-label">WINs</div>
+                    <div class="info-card">
+                        <div class="info-label"><i class="fas fa-trophy"></i> WINs</div>
                         <div class="info-value" id="wins">0</div>
                     </div>
-                    <div class="info-item">
-                        <div class="info-label">LOSSes</div>
+                    <div class="info-card">
+                        <div class="info-label"><i class="fas fa-heart-crack"></i> LOSSes</div>
                         <div class="info-value" id="losses">0</div>
                     </div>
+                </div>
+                
+                <div class="status-indicator">
+                    <div class="indicator"></div>
+                    <span>Conectado à Stockity API</span>
                 </div>
             </div>
             
             <div class="panel">
-                <h2 class="panel-title"><i>🔍</i> Critérios de Decisão</h2>
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i class="fas fa-list-check"></i> Critérios de Decisão
+                    </div>
+                </div>
                 <ul id="criterios" class="criteria-list">
-                    <li>Inicializando sistema...</li>
+                    <li><i class="fas fa-circle-notch fa-spin"></i> Inicializando análise...</li>
                 </ul>
             </div>
             
             <div class="panel history-panel">
-                <h2 class="panel-title"><i>📝</i> Histórico e Estatísticas</h2>
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i class="fas fa-history"></i> Histórico de Operações
+                    </div>
+                    <div class="panel-actions">
+                        <button class="btn btn-outline" id="btn-refresh">
+                            <i class="fas fa-sync-alt"></i> Atualizar
+                        </button>
+                    </div>
+                </div>
                 <div class="history-grid">
                     <div>
                         <h3>Últimos Sinais</h3>
                         <ul id="ultimos" class="history-list">
-                            <li>Nenhum sinal registrado</li>
+                            <li class="wait">Nenhuma operação realizada</li>
                         </ul>
                     </div>
                     <div>
                         <h3>Configurações Ativas</h3>
-                        <div style="margin-top: 15px;">
-                            <p><span class="config-badge">EMA Rápida: 3</span> <span class="config-badge">EMA Média: 13</span> <span class="config-badge">EMA Longa: 34</span></p>
-                            <p><span class="config-badge">RSI: 7</span> <span class="config-badge">RSI Alto: 72</span> <span class="config-badge">RSI Baixo: 30</span></p>
-                            <p><span class="config-badge">Volume Lookback: 4</span> <span class="config-badge">Volume Threshold: 2.5</span></p>
-                            <p><span class="config-badge">ATR: 14</span> <span class="config-badge">ATR Threshold: 0.015</span></p>
-                            <p><span class="config-badge">Horários Preferenciais: 12-15h, 15-18h, 21-24h</span></p>
+                        <div class="config-section">
+                            <div class="config-grid">
+                                <div class="config-item">
+                                    <div class="config-label">EMA Rápida</div>
+                                    <div class="config-value">3 períodos</div>
+                                </div>
+                                <div class="config-item">
+                                    <div class="config-label">EMA Média</div>
+                                    <div class="config-value">13 períodos</div>
+                                </div>
+                                <div class="config-item">
+                                    <div class="config-label">EMA Longa</div>
+                                    <div class="config-value">34 períodos</div>
+                                </div>
+                                <div class="config-item">
+                                    <div class="config-label">RSI</div>
+                                    <div class="config-value">7 períodos</div>
+                                </div>
+                                <div class="config-item">
+                                    <div class="config-label">Volume Lookback</div>
+                                    <div class="config-value">4 períodos</div>
+                                </div>
+                                <div class="config-item">
+                                    <div class="config-label">ATR</div>
+                                    <div class="config-value">14 períodos</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -75,13 +142,10 @@
         </div>
         
         <div class="footer">
-            <p>Sistema de análise técnica para IDX M1 - Versão 2025.1 | Desenvolvido com algoritmos avançados de trading</p>
-            <p>⚠️ Este é um sistema demonstrativo para fins educacionais. Não deve ser utilizado para operações reais.</p>
+            <p>Sistema de Trading Automático para IDX na Stockity - Versão 2024.1</p>
+            <p>⚠️ Sistema em operação real - Todas as transações são executadas na sua conta</p>
         </div>
     </div>
-    
-    <audio id="som-call" src="https://assets.mixkit.co/sfx/preview/mixkit-winning-chimes-2015.mp3"></audio>
-    <audio id="som-put" src="https://assets.mixkit.co/sfx/preview/mixkit-warning-alarm-688.mp3"></audio>
 
     <script src="script.js"></script>
 </body>
