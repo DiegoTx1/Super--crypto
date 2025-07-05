@@ -1,7 +1,8 @@
 // =============================================
-// CONFIGURAÇÕES AVANÇADAS PARA IDX M1 (2025)
+// CONFIGURAÇÕES DO SISTEMA REAL
 // =============================================
 const CONFIG = {
+  API_KEY: 'SUA_CHAVE_API_STOCKITY', // SUA CHAVE REAL AQUI
   PERIODOS: {
     EMA_RAPIDA: 3,
     EMA_MEDIA: 13,
@@ -26,7 +27,9 @@ const CONFIG = {
     { start: 12, end: 15 },
     { start: 15, end: 18 },
     { start: 21, end: 24 }
-  ]
+  ],
+  SYMBOL: 'IDX/USDT',
+  TRADE_AMOUNT: 100 // Valor em USDT por operação
 };
 
 // =============================================
@@ -34,17 +37,111 @@ const CONFIG = {
 // =============================================
 const state = {
   timer: 60,
-  ultimos: [],
+  ultimosSinais: [],
   ultimaAtualizacao: "",
-  leituraEmAndamento: false,
   dadosHistoricos: [],
   ultimoSinal: "ESPERAR",
   ultimoScore: 0,
   historicoOperacoes: { win: 0, loss: 0 },
   intervaloTimer: null,
-  consecutiveErrors: 0,
-  lastTimestamp: null
+  stockityConectado: false,
+  precoAtual: 0,
+  volumeAtual: 0,
+  botAtivo: false
 };
+
+// =============================================
+// FUNÇÕES DE CONEXÃO COM A STOCKITY
+// =============================================
+async function autenticarStockity() {
+  try {
+    const response = await fetch('https://api.stockity.com/auth', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-KEY': CONFIG.API_KEY
+      }
+    });
+    
+    if (!response.ok) throw new Error('Falha na autenticação');
+    
+    const data = await response.json();
+    state.stockityConectado = true;
+    console.log('Autenticado com sucesso! Token:', data.token);
+    return data.token;
+  } catch (error) {
+    console.error('Erro na autenticação:', error);
+    state.stockityConectado = false;
+    return null;
+  }
+}
+
+async function obterDadosMercado() {
+  try {
+    const response = await fetch(`https://api.stockity.com/market-data?symbol=${CONFIG.SYMBOL}&timeframe=1m&limit=100`, {
+      headers: {
+        'X-API-KEY': CONFIG.API_KEY
+      }
+    });
+    
+    if (!response.ok) throw new Error('Erro ao obter dados');
+    
+    const data = await response.json();
+    state.dadosHistoricos = data.candles;
+    state.precoAtual = data.current_price;
+    state.volumeAtual = data.current_volume;
+    
+    // Atualizar UI
+    document.querySelector('.price-display').textContent = state.precoAtual.toFixed(4);
+    
+    return true;
+  } catch (error) {
+    console.error('Erro nos dados de mercado:', error);
+    return false;
+  }
+}
+
+async function executarOrdem(direcao) {
+  try {
+    const response = await fetch('https://api.stockity.com/orders', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-KEY': CONFIG.API_KEY
+      },
+      body: JSON.stringify({
+        symbol: CONFIG.SYMBOL,
+        type: 'MARKET',
+        side: direcao === 'CALL' ? 'BUY' : 'SELL',
+        amount: CONFIG.TRADE_AMOUNT
+      })
+    });
+    
+    if (!response.ok) throw new Error('Erro na execução da ordem');
+    
+    const data = await response.json();
+    console.log('Ordem executada:', data);
+    
+    // Registrar operação
+    const novaOperacao = {
+      id: data.orderId,
+      time: new Date().toLocaleTimeString(),
+      direction: direcao,
+      amount: CONFIG.TRADE_AMOUNT,
+      status: 'EXECUTED'
+    };
+    
+    state.ultimosSinais.unshift(novaOperacao);
+    if (state.ultimosSinais.length > 10) state.ultimosSinais.pop();
+    
+    atualizarHistorico();
+    
+    return data;
+  } catch (error) {
+    console.error('Erro ao executar ordem:', error);
+    return null;
+  }
+}
 
 // =============================================
 // FUNÇÕES TÉCNICAS
@@ -139,15 +236,14 @@ function gerarSinal() {
     return { sinal: "ESPERAR", score: 0, criterios: ["Coletando dados..."] };
   }
   
-  const dados = state.dadosHistoricos;
-  const closes = dados.map(c => c.close);
-  const volumes = dados.map(c => c.volume);
+  const closes = state.dadosHistoricos.map(c => c.close);
+  const volumes = state.dadosHistoricos.map(c => c.volume);
   
   const emaRapida = calcularEMA(closes, CONFIG.PERIODOS.EMA_RAPIDA);
   const emaMedia = calcularEMA(closes, CONFIG.PERIODOS.EMA_MEDIA);
   const emaLonga = calcularEMA(closes, CONFIG.PERIODOS.EMA_LONGA);
   const rsi = calcularRSI(closes);
-  const atr = calcularATR(dados);
+  const atr = calcularATR(state.dadosHistoricos);
   const volumeRel = calcularVolumeRelativo(volumes);
   const forcaMercado = calcularForcaMercado();
   
@@ -225,25 +321,15 @@ function atualizarInterface(sinal, score, criterios = []) {
   
   if (sinal === "CALL") {
     comandoElement.textContent = "CALL 📈";
-    try {
-      document.getElementById("som-call").play();
-    } catch (e) {
-      console.log("Erro ao tocar som:", e);
-    }
   } 
   else if (sinal === "PUT") {
     comandoElement.textContent = "PUT 📉";
-    try {
-      document.getElementById("som-put").play();
-    } catch (e) {
-      console.log("Erro ao tocar som:", e);
-    }
   } 
   else if (sinal === "ERRO") {
     comandoElement.textContent = "ERRO ❌";
   } 
   else {
-    comandoElement.textContent = "ESPERAR ✋";
+    comandoElement.textContent = "AGUARDANDO SINAL";
   }
   
   document.getElementById("score").textContent = `${Math.round(score)}%`;
@@ -254,8 +340,8 @@ function atualizarInterface(sinal, score, criterios = []) {
   else barraProgresso.style.background = "linear-gradient(90deg, #f44336, #d32f2f)";
   
   const criteriosHTML = criterios.length 
-    ? criterios.map(c => `<li>${c}</li>`).join("") 
-    : "<li>Analisando condições de mercado...</li>";
+    ? criterios.map(c => `<li><i class="fas fa-check-circle"></i> ${c}</li>`).join("") 
+    : "<li><i class="fas fa-circle-notch fa-spin"></i> Analisando condições de mercado...</li>";
   document.getElementById("criterios").innerHTML = criteriosHTML;
   
   state.ultimoSinal = sinal;
@@ -265,76 +351,60 @@ function atualizarInterface(sinal, score, criterios = []) {
   document.getElementById("losses").textContent = state.historicoOperacoes.loss;
 }
 
-function registrar(resultado) {
-  if (state.ultimoSinal === "CALL" || state.ultimoSinal === "PUT") {
-    if (resultado === "WIN") state.historicoOperacoes.win++;
-    else if (resultado === "LOSS") state.historicoOperacoes.loss++;
-    
-    state.ultimos.unshift(`${state.ultimaAtualizacao} - ${state.ultimoSinal} (${resultado})`);
-    if (state.ultimos.length > 8) state.ultimos.pop();
-    
-    const ultimosHTML = state.ultimos.length 
-      ? state.ultimos.map(i => {
-          const isCall = i.includes("CALL");
-          return `<li class="${isCall ? 'call-history' : 'put-history'}">${i}</li>`;
-        }).join("") 
-      : "<li>Nenhum sinal registrado</li>";
-    document.getElementById("ultimos").innerHTML = ultimosHTML;
+function atualizarHistorico() {
+  const historyList = document.getElementById("ultimos");
+  historyList.innerHTML = "";
+  
+  if (state.ultimosSinais.length === 0) {
+    historyList.innerHTML = "<li class='wait'>Nenhuma operação realizada</li>";
+    return;
   }
+  
+  state.ultimosSinais.forEach(op => {
+    const li = document.createElement("li");
+    li.className = op.direction.toLowerCase();
+    
+    li.innerHTML = `
+      <div class="trade-info">
+        <div>${op.time}</div>
+        <div>${op.direction} • $${op.amount}</div>
+      </div>
+      <div class="trade-status ${op.status === 'EXECUTED' ? 'status-success' : 'status-warning'}">
+        ${op.status === 'EXECUTED' ? 'EXECUTADO' : 'PENDENTE'}
+      </div>
+    `;
+    
+    historyList.appendChild(li);
+  });
 }
 
 // =============================================
-// SIMULADOR DE DADOS
+// CICLO PRINCIPAL DE TRADING
 // =============================================
-function gerarDadosSimulados() {
-  const ultimoClose = state.dadosHistoricos.length > 0 
-    ? state.dadosHistoricos[state.dadosHistoricos.length - 1].close 
-    : 35000;
+async function analisarMercado() {
+  if (!state.botAtivo) return;
   
-  const variacao = (Math.random() - 0.5) * 0.015;
-  const novoClose = ultimoClose * (1 + variacao);
-  
-  return {
-    time: new Date().toISOString(),
-    open: ultimoClose,
-    high: Math.max(ultimoClose, novoClose) * (1 + Math.random() * 0.008),
-    low: Math.min(ultimoClose, novoClose) * (1 - Math.random() * 0.008),
-    close: novoClose,
-    volume: 50000000 + Math.random() * 200000000
-  };
-}
-
-// =============================================
-// CICLO PRINCIPAL
-// =============================================
-function analisarMercado() {
-  atualizarRelogio();
-  
-  const novoDado = gerarDadosSimulados();
-  
-  state.dadosHistoricos.push(novoDado);
-  if (state.dadosHistoricos.length > 100) {
-    state.dadosHistoricos.shift();
+  // Atualizar dados do mercado
+  const dadosAtualizados = await obterDadosMercado();
+  if (!dadosAtualizados) {
+    atualizarInterface("ERRO", 0, ["Falha na conexão com a Stockity"]);
+    return;
   }
   
+  // Gerar sinal
   const { sinal, score, criterios } = gerarSinal();
   
+  // Atualizar interface
   atualizarInterface(sinal, score, criterios);
   
-  if (sinal === "CALL" || sinal === "PUT") {
-    state.ultimos.unshift(`${state.ultimaAtualizacao} - ${sinal} (${Math.round(score)}%)`);
-    if (state.ultimos.length > 8) state.ultimos.pop();
+  // Executar ordem se necessário
+  if ((sinal === "CALL" || sinal === "PUT") && score >= 75) {
+    const resultado = await executarOrdem(sinal);
     
-    const ultimosHTML = state.ultimos.map(i => {
-        const isCall = i.includes("CALL");
-        return `<li class="${isCall ? 'call-history' : 'put-history'}">${i}</li>`;
-    }).join("");
-    document.getElementById("ultimos").innerHTML = ultimosHTML;
-    
-    setTimeout(() => {
-        const resultado = Math.random() < 0.8 ? "WIN" : "LOSS";
-        registrar(resultado);
-    }, 5000);
+    if (resultado) {
+      // Atualizar histórico após execução
+      setTimeout(atualizarHistorico, 1000);
+    }
   }
 }
 
@@ -362,30 +432,37 @@ function sincronizarTimer() {
 }
 
 // =============================================
-// INICIALIZAÇÃO
+// INICIALIZAÇÃO DO SISTEMA
 // =============================================
-function iniciar() {
-  for (let i = 0; i < 50; i++) {
-    const variacao = (Math.random() - 0.5) * 0.02;
-    const close = 35000 * (1 + variacao);
-    
-    state.dadosHistoricos.push({
-      time: new Date(Date.now() - (50 - i) * 60000).toISOString(),
-      open: 35000 + Math.random() * 1000,
-      high: close * (1 + Math.random() * 0.01),
-      low: close * (1 - Math.random() * 0.01),
-      close: close,
-      volume: 50000000 + Math.random() * 200000000
-    });
+async function iniciar() {
+  // Autenticar na Stockity
+  const autenticado = await autenticarStockity();
+  
+  if (!autenticado) {
+    document.querySelector(".indicator").classList.add("offline");
+    document.querySelector(".status-indicator span").textContent = "Falha na conexão com a Stockity";
+    return;
   }
   
+  // Obter dados iniciais
+  await obterDadosMercado();
+  
+  // Iniciar processos
   sincronizarTimer();
   setInterval(atualizarRelogio, 1000);
   atualizarRelogio();
   
+  // Primeira análise
   setTimeout(analisarMercado, 1000);
   
+  // Inicializar interface
   atualizarInterface("ESPERAR", 0, ["Aguardando primeira análise..."]);
+  
+  // Ativar bot
+  state.botAtivo = true;
+  
+  // Configurar botão de parada
+  document.getElementById("btn-refresh").addEventListener("click", analisarMercado);
 }
 
 document.addEventListener("DOMContentLoaded", iniciar);
