@@ -82,29 +82,22 @@ const CONFIG = {
 };
 
 // =============================================
-// GERENCIADOR DE CHAVES API
+// GERENCIADOR DE CHAVES API (SUA CHAVE INTEGRADA)
 // =============================================
 const API_KEYS = [
-  "9cf795b2a4f14d43a049ca935d174ebb",
-  "0105e6681b894e0185704171c53f5075"
+  "0105e6681b894e0185704171c53f5075"  // SUA CHAVE AQUI
 ];
-let currentKeyIndex = 0;
-let errorCount = 0;
 
 // =============================================
-// FUNÇÕES DE DADOS COM PROXY CORS
+// SISTEMA DE PROXY ATUALIZADO (SEM LIMITAÇÕES)
 // =============================================
 async function obterDadosTwelveData() {
   try {
-    const apiKey = API_KEYS[currentKeyIndex];
-    const proxyUrl = "https://cors-anywhere.herokuapp.com/";
-    const apiUrl = `${CONFIG.API_ENDPOINTS.TWELVE_DATA}/time_series?symbol=${CONFIG.PARES.FOREX_IDX}&interval=1min&outputsize=100&apikey=${apiKey}`;
+    const apiKey = API_KEYS[0];
+    const PROXY_URL = "https://corsproxy.io/?";
+    const API_URL = `${CONFIG.API_ENDPOINTS.TWELVE_DATA}/time_series?symbol=${CONFIG.PARES.FOREX_IDX}&interval=1min&outputsize=100&apikey=${apiKey}`;
     
-    const response = await fetch(proxyUrl + apiUrl, {
-      headers: {
-        "X-Requested-With": "XMLHttpRequest"
-      }
-    });
+    const response = await fetch(PROXY_URL + encodeURIComponent(API_URL));
     
     if (!response.ok) {
       throw new Error(`Falha na API: ${response.status}`);
@@ -128,13 +121,6 @@ async function obterDadosTwelveData() {
     }));
   } catch (e) {
     console.error("Erro ao obter dados:", e);
-    
-    errorCount++;
-    if (errorCount >= 2) {
-      currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
-      errorCount = 0;
-    }
-    
     throw e;
   }
 }
