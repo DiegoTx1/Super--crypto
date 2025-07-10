@@ -3,7 +3,7 @@
 // =============================================
 const state = {
   ultimos: [],
-  timer: 60,
+  timer: 180,  // Alterado para 180 segundos (3 minutos)
   ultimaAtualizacao: "",
   leituraEmAndamento: false,
   intervaloAtual: null,
@@ -33,7 +33,8 @@ const state = {
   superTrendCache: [],
   atrGlobal: 0,
   rsiHistory: [],
-  cooldown: 0
+  cooldown: 0,
+  operacoesHoje: 0
 };
 
 const CONFIG = {
@@ -67,9 +68,9 @@ const CONFIG = {
     RSI_OVERSOLD: 30,
     STOCH_OVERBOUGHT: 85,
     STOCH_OVERSOLD: 15,
-    VARIACAO_LATERAL: 0.0003,
+    VARIACAO_LATERAL: 0.0005,  // Aumentado para melhor filtragem
     ATR_LIMIAR: 0.00015,
-    LATERALIDADE_LIMIAR: 0.0003
+    LATERALIDADE_LIMIAR: 0.0005  // Aumentado para melhor filtragem
   },
   PESOS: {
     RSI: 1.7,
@@ -82,14 +83,14 @@ const CONFIG = {
 };
 
 // =============================================
-// GERENCIADOR DE CHAVES API (SUA CHAVE INTEGRADA)
+// GERENCIADOR DE CHAVES API
 // =============================================
 const API_KEYS = [
-  "0105e6681b894e0185704171c53f5075"  // SUA CHAVE AQUI
+  "0105e6681b894e0185704171c53f5075"
 ];
 
 // =============================================
-// SISTEMA DE PROXY ATUALIZADO (SEM LIMITAÇÕES)
+// SISTEMA DE PROXY ATUALIZADO
 // =============================================
 async function obterDadosTwelveData() {
   try {
@@ -177,9 +178,25 @@ function calcularZonasPreco(dados, periodo = 50) {
 }
 
 // =============================================
+// FUNÇÃO PARA VERIFICAR HORÁRIO DE NOTÍCIAS
+// =============================================
+function dentroHorarioNoticias() {
+  const agora = new Date();
+  const horaUTC = agora.getUTCHours();
+  const minutos = agora.getMinutes();
+  // Horário de notícias: 9:30 AM EST = 13:30 UTC até 10:30 AM EST = 14:30 UTC
+  return (horaUTC === 13 && minutos >= 30) || (horaUTC === 14 && minutos <= 30);
+}
+
+// =============================================
 // GERADOR DE SINAIS DE ALTA PRECISÃO PARA EURUSD
 // =============================================
 function gerarSinal(indicadores, divergencias, lateral) {
+  // Não operar durante horário de notícias
+  if (dentroHorarioNoticias()) {
+    return "ESPERAR";
+  }
+
   const {
     rsi,
     stoch,
@@ -294,7 +311,9 @@ function calcularScore(sinal, indicadores, divergencias) {
 // FUNÇÕES UTILITÁRIAS
 // =============================================
 function formatarTimer(segundos) {
-  return `0:${segundos.toString().padStart(2, '0')}`;
+  const min = Math.floor(segundos / 60);
+  const seg = segundos % 60;
+  return `${min}:${seg.toString().padStart(2, '0')}`;
 }
 
 function atualizarRelogio() {
@@ -688,7 +707,8 @@ async function analisarMercado() {
     const dados = await obterDadosTwelveData();
     state.dadosHistoricos = dados;
     
-    if (dados.length < 20) {
+    // Exigir mais dados para análise
+    if (dados.length < 30) {
       throw new Error(`Dados insuficientes (${dados.length} velas)`);
     }
     
@@ -711,7 +731,7 @@ async function analisarMercado() {
     const stoch = calcularStochastic(highs, lows, closes);
     const macd = calcularMACD(closes);
     
-    // Preencher histórico de RSI CORRETAMENTE
+    // Preencher histórico de RSI
     state.rsiHistory = [];
     for (let i = CONFIG.PERIODOS.RSI; i < closes.length; i++) {
       state.rsiHistory.push(calcularRSI(closes.slice(0, i+1)));
@@ -740,8 +760,14 @@ async function analisarMercado() {
     // Aplicar cooldown
     if (sinal !== "ESPERAR" && state.cooldown <= 0) {
       state.cooldown = 3;
+      state.operacoesHoje++;
     } else if (state.cooldown > 0) {
       state.cooldown--;
+      sinal = "ESPERAR";
+    }
+
+    // Limitar operações diárias
+    if (state.operacoesHoje >= 15) {
       sinal = "ESPERAR";
     }
 
@@ -795,14 +821,12 @@ async function analisarMercado() {
 // =============================================
 function sincronizarTimer() {
   clearInterval(state.intervaloAtual);
-  const agora = new Date();
-  const segundos = agora.getSeconds();
-  state.timer = 60 - segundos;
+  state.timer = 180; // Sempre começa com 3 minutos
   
   const elementoTimer = document.getElementById("timer");
   if (elementoTimer) {
     elementoTimer.textContent = formatarTimer(state.timer);
-    elementoTimer.style.color = state.timer <= 5 ? 'red' : '';
+    elementoTimer.style.color = state.timer <= 30 ? 'red' : '';
   }
   
   state.intervaloAtual = setInterval(() => {
@@ -810,13 +834,13 @@ function sincronizarTimer() {
     
     if (elementoTimer) {
       elementoTimer.textContent = formatarTimer(state.timer);
-      elementoTimer.style.color = state.timer <= 5 ? 'red' : '';
+      elementoTimer.style.color = state.timer <= 30 ? 'red' : '';
     }
     
     if (state.timer <= 0) {
       clearInterval(state.intervaloAtual);
       analisarMercado();
-      sincronizarTimer();
+      sincronizarTimer(); // Reinicia o ciclo
     }
   }, 1000);
 }
@@ -834,7 +858,7 @@ function iniciarAplicativo() {
       <div id="info">
         <div id="score">--</div>
         <div>Atualização: <span id="hora">--:--:--</span></div>
-        <div>Próxima: <span id="timer">0:60</span></div>
+        <div>Próxima: <span id="timer">3:00</span></div>
       </div>
     </div>
     <div id="tendencia-container">
