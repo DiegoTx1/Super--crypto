@@ -1,11 +1,12 @@
+const WebSocket = require('ws');
+const axios = require('axios');
+const math = require('mathjs');
+
 // Configurações do robô
 const CONFIG = {
-    asset: "IDX",
+    asset: "BTCUSDT", // Ativo de referência para o CRYPTO IDX
     timeframe: "1m",
-    balance: 1000,
-    riskPerTrade: 2, // 2% do saldo por operação
-    minConfidence: 75, // Confiança mínima para operar
-    maxTradesPerMinute: 2,
+    minConfidence: 75, // Confiança mínima para emitir sinal
     indicators: {
         rsiPeriod: 9,
         emaShort: 5,
@@ -16,14 +17,12 @@ const CONFIG = {
 
 // Estado do robô
 const state = {
-    active: false,
+    active: true,
     lastSignal: null,
     lastSignalTime: null,
-    tradeCount: 0,
     signalHistory: [],
     indicators: {
         rsi: 50,
-        macd: 0,
         stochK: 50,
         stochD: 50,
         ema5: 0,
@@ -32,297 +31,240 @@ const state = {
         trend: "NEUTRA",
         trendStrength: 50
     },
-    iqOptionConnected: false,
-    tradingEnabled: true
+    candles: []
 };
 
-// Elementos DOM
-const elements = {
-    signal: document.getElementById('signal'),
-    confidence: document.getElementById('confidence'),
-    startBtn: document.getElementById('start-btn'),
-    callBtn: document.getElementById('call-btn'),
-    putBtn: document.getElementById('put-btn'),
-    statusIndicator: document.getElementById('status-indicator'),
-    statusText: document.getElementById('status-text'),
-    historyList: document.getElementById('history-list'),
-    rsi: document.getElementById('rsi'),
-    macd: document.getElementById('macd'),
-    stoch: document.getElementById('stoch'),
-    ema5: document.getElementById('ema5'),
-    ema13: document.getElementById('ema13'),
-    volume: document.getElementById('volume'),
-    trend: document.getElementById('trend'),
-    strength: document.getElementById('strength'),
-    lastSignal: document.getElementById('last-signal')
-};
+// Inicializar WebSocket
+const ws = new WebSocket(`wss://fstream.binance.com/ws/${CONFIG.asset.toLowerCase()}@kline_${CONFIG.timeframe}`);
 
-// Inicialização
-document.addEventListener('DOMContentLoaded', () => {
-    // Configurar event listeners
-    elements.startBtn.addEventListener('click', toggleRobot);
-    elements.callBtn.addEventListener('click', () => manualTrade('CALL'));
-    elements.putBtn.addEventListener('click', () => manualTrade('PUT'));
-    
-    // Iniciar simulação de dados
-    simulateMarketData();
-    
-    // Atualizar UI
-    updateStatus();
+ws.on('open', () => {
+    console.log(`Conectado à Binance: ${CONFIG.asset}@${CONFIG.timeframe}`);
+    console.log("Aguardando dados para gerar sinais...\n");
 });
 
-// Alternar estado do robô
-function toggleRobot() {
-    state.active = !state.active;
-    
-    if (state.active) {
-        elements.startBtn.innerHTML = '<i class="fas fa-pause"></i> Pausar Robô';
-        elements.startBtn.classList.remove('btn-primary');
-        elements.startBtn.classList.add('btn-danger');
-        elements.statusIndicator.classList.add('call');
-        elements.statusText.textContent = 'Operando...';
-        
-        // Conectar à IQ Option (simulação)
-        setTimeout(() => {
-            state.iqOptionConnected = true;
-            updateStatus();
-            addToHistory('Conexão estabelecida com IQ Option', 'system');
-        }, 1500);
-    } else {
-        elements.startBtn.innerHTML = '<i class="fas fa-play"></i> Iniciar Robô';
-        elements.startBtn.classList.remove('btn-danger');
-        elements.startBtn.classList.add('btn-primary');
-        elements.statusIndicator.classList.remove('call');
-        elements.statusText.textContent = 'Pausado';
-        state.iqOptionConnected = false;
+ws.on('message', (data) => {
+    const message = JSON.parse(data);
+    if (message.k) {
+        processCandle(message.k);
     }
-    
-    updateStatus();
-}
+});
 
-// Atualizar status da conexão
-function updateStatus() {
-    if (state.iqOptionConnected) {
-        elements.statusIndicator.className = 'signal-indicator call';
-        elements.statusText.textContent = 'Conectado';
-    } else {
-        elements.statusIndicator.className = 'signal-indicator wait';
-        elements.statusText.textContent = state.active ? 'Conectando...' : 'Desconectado';
-    }
-}
-
-// Operação manual
-function manualTrade(direction) {
-    if (!state.iqOptionConnected) {
-        alert('Conecte-se à IQ Option primeiro!');
-        return;
-    }
-    
-    const signalData = {
-        type: direction,
-        confidence: 100,
-        timestamp: new Date(),
-        manual: true
+// Processar dados da vela
+function processCandle(candle) {
+    const newCandle = {
+        open: parseFloat(candle.o),
+        high: parseFloat(candle.h),
+        low: parseFloat(candle.l),
+        close: parseFloat(candle.c),
+        volume: parseFloat(candle.v),
+        timestamp: new Date(candle.t),
+        isClosed: candle.x
     };
-    
-    executeTrade(signalData);
-}
 
-// Executar operação
-function executeTrade(signal) {
-    // Calcular valor da operação
-    const tradeAmount = (CONFIG.balance * CONFIG.riskPerTrade) / 100;
-    
-    // Simular operação na IQ Option
-    const success = Math.random() > 0.3; // 70% de sucesso
-    const profit = success ? tradeAmount * 0.8 : -tradeAmount;
-    
-    // Atualizar saldo
-    CONFIG.balance += profit;
-    
-    // Registrar operação
-    signal.amount = tradeAmount;
-    signal.profit = profit;
-    signal.success = success;
-    signal.timestamp = new Date();
-    state.signalHistory.unshift(signal);
-    
-    // Atualizar UI
-    updateTradeHistory();
-    
-    // Mostrar resultado
-    const resultClass = success ? 'call' : 'put';
-    const resultText = success ? 
-        `SUCESSO! Lucro: $${profit.toFixed(2)}` : 
-        `FALHA! Perda: $${Math.abs(profit).toFixed(2)}`;
-    
-    addToHistory(resultText, resultClass);
-}
-
-// Adicionar ao histórico
-function addToHistory(text, type) {
-    const now = new Date();
-    const timeString = now.toLocaleTimeString();
-    
-    const historyItem = document.createElement('div');
-    historyItem.className = `history-item`;
-    
-    historyItem.innerHTML = `
-        <div>
-            <span class="signal-indicator ${type}"></span>
-            ${text}
-        </div>
-        <div class="time">${timeString}</div>
-    `;
-    
-    elements.historyList.prepend(historyItem);
-}
-
-// Atualizar histórico de operações
-function updateTradeHistory() {
-    // Limitar histórico a 20 itens
-    if (state.signalHistory.length > 20) {
-        state.signalHistory = state.signalHistory.slice(0, 20);
-    }
-    
-    // Atualizar lista
-    elements.historyList.innerHTML = '';
-    state.signalHistory.forEach(signal => {
-        const time = new Date(signal.timestamp).toLocaleTimeString();
-        const typeClass = signal.type ? signal.type.toLowerCase() : 'system';
+    if (newCandle.isClosed) {
+        state.candles.push(newCandle);
         
-        const historyItem = document.createElement('div');
-        historyItem.className = 'history-item';
-        
-        let text = signal.manual ? 
-            `Operação MANUAL (${signal.type})` : 
-            `Operação AUTOMÁTICA (${signal.type})`;
-        
-        if (signal.success !== undefined) {
-            text += ` | ${signal.success ? '✅' : '❌'} $${signal.profit.toFixed(2)}`;
+        // Manter apenas as últimas 100 velas
+        if (state.candles.length > 100) {
+            state.candles.shift();
         }
         
-        historyItem.innerHTML = `
-            <div>
-                <span class="signal-indicator ${typeClass}"></span>
-                ${text}
-            </div>
-            <div class="time">${time}</div>
-        `;
+        // Calcular indicadores
+        calculateIndicators();
         
-        elements.historyList.appendChild(historyItem);
-    });
+        // Gerar sinal
+        generateSignal();
+    }
 }
 
-// Gerar sinal de trading
+// Calcular indicadores
+function calculateIndicators() {
+    if (state.candles.length < 20) return;
+    
+    // Calcular RSI
+    state.indicators.rsi = calculateRSI(CONFIG.indicators.rsiPeriod);
+    
+    // Calcular EMAs
+    state.indicators.ema5 = calculateEMA(CONFIG.indicators.emaShort);
+    state.indicators.ema13 = calculateEMA(CONFIG.indicators.emaLong);
+    
+    // Calcular Estocástico
+    calculateStochastic();
+    
+    // Volume (última vela)
+    state.indicators.volume = state.candles[state.candles.length - 1].volume;
+    
+    // Determinar tendência
+    updateTrend();
+}
+
+// Cálculo do RSI
+function calculateRSI(period) {
+    const closes = state.candles.slice(-period - 1).map(c => c.close);
+    let gains = 0;
+    let losses = 0;
+    
+    for (let i = 1; i < closes.length; i++) {
+        const diff = closes[i] - closes[i-1];
+        if (diff > 0) gains += diff;
+        else losses -= diff;
+    }
+    
+    const avgGain = gains / period;
+    const avgLoss = losses / period;
+    const rs = avgGain / (avgLoss || 1); // Evita divisão por zero
+    return 100 - (100 / (1 + rs));
+}
+
+// Cálculo da EMA
+function calculateEMA(period) {
+    const closes = state.candles.map(c => c.close);
+    if (closes.length < period) return 0;
+    
+    let ema = math.mean(closes.slice(0, period));
+    const multiplier = 2 / (period + 1);
+    
+    for (let i = period; i < closes.length; i++) {
+        ema = (closes[i] - ema) * multiplier + ema;
+    }
+    
+    return ema;
+}
+
+// Calcular Estocástico
+function calculateStochastic() {
+    const period = CONFIG.indicators.stochPeriod;
+    if (state.candles.length < period) return;
+    
+    const recentCandles = state.candles.slice(-period);
+    const currentClose = recentCandles[recentCandles.length - 1].close;
+    
+    // Encontrar máximo e mínimo no período
+    const high = math.max(recentCandles.map(c => c.high));
+    const low = math.min(recentCandles.map(c => c.low));
+    
+    // Calcular %K
+    state.indicators.stochK = ((currentClose - low) / (high - low)) * 100;
+    
+    // Calcular %D (média móvel simples de 3 períodos do %K)
+    const kValues = [
+        state.indicators.stochK,
+        ...state.signalHistory.slice(-2).map(s => s.stochK)
+    ].filter(v => v !== undefined);
+    
+    state.indicators.stochD = math.mean(kValues);
+}
+
+// Atualizar tendência
+function updateTrend() {
+    const emaDiff = state.indicators.ema5 - state.indicators.ema13;
+    const rsiValue = state.indicators.rsi;
+    
+    if (emaDiff > 0 && rsiValue > 50) {
+        state.indicators.trend = "ALTA";
+        state.indicators.trendStrength = 80;
+    } else if (emaDiff < 0 && rsiValue < 50) {
+        state.indicators.trend = "BAIXA";
+        state.indicators.trendStrength = 80;
+    } else {
+        state.indicators.trend = "NEUTRA";
+        state.indicators.trendStrength = 50;
+    }
+}
+
+// Gerar sinal com confiança
 function generateSignal() {
-    if (!state.active || !state.iqOptionConnected) return;
+    if (!state.active) return;
     
-    // Simular dados de mercado
-    simulateMarketData();
-    
-    // Gerar sinal baseado nos indicadores
     let signal = "ESPERAR";
     let confidence = 0;
     
-    // Lógica de geração de sinais (simplificada)
+    // Lógica de geração de sinais
     if (state.indicators.trend === "ALTA" && state.indicators.trendStrength > 70) {
         if (state.indicators.rsi < 65 && state.indicators.stochK > 50) {
             signal = "CALL";
-            confidence = 75 + Math.floor(Math.random() * 20);
+            confidence = 75 + math.random(0, 20);
         }
     } else if (state.indicators.trend === "BAIXA" && state.indicators.trendStrength > 70) {
         if (state.indicators.rsi > 35 && state.indicators.stochK < 50) {
             signal = "PUT";
-            confidence = 75 + Math.floor(Math.random() * 20);
+            confidence = 75 + math.random(0, 20);
         }
     }
     
     // Limitar confiança
-    confidence = Math.min(99, confidence);
+    confidence = math.min(99, confidence);
     
-    // Atualizar UI
-    elements.signal.textContent = signal;
-    elements.signal.className = `signal ${signal.toLowerCase()}`;
-    elements.confidence.textContent = `Confiança: ${confidence}%`;
-    
-    // Adicionar classe de animação
-    elements.signal.classList.add('pulse');
-    setTimeout(() => {
-        elements.signal.classList.remove('pulse');
-    }, 500);
-    
-    // Registrar sinal
-    if (signal !== "ESPERAR") {
+    // Emitir sinal se tiver confiança mínima
+    if (signal !== "ESPERAR" && confidence >= CONFIG.minConfidence) {
         state.lastSignal = signal;
-        state.lastSignalTime = new Date().toLocaleTimeString();
-        elements.lastSignal.textContent = state.lastSignalTime;
+        state.lastSignalTime = new Date();
         
-        // Executar operação se confiança for alta
-        if (confidence >= CONFIG.minConfidence && state.tradingEnabled) {
-            const signalData = {
-                type: signal,
-                confidence: confidence,
-                timestamp: new Date(),
-                manual: false
-            };
-            
-            executeTrade(signalData);
-        }
+        // Registrar sinal
+        const signalData = {
+            type: signal,
+            confidence: math.round(confidence),
+            timestamp: new Date(),
+            indicators: {...state.indicators}
+        };
         
-        // Adicionar ao histórico
-        addToHistory(`Sinal gerado: ${signal} (${confidence}%)`, signal.toLowerCase());
+        state.signalHistory.push(signalData);
+        
+        // Exibir sinal no console
+        displaySignal(signalData);
     }
 }
 
-// Simular dados de mercado
-function simulateMarketData() {
-    // Gerar dados aleatórios (em uma implementação real, isso viria da API)
-    state.indicators.rsi = 40 + Math.random() * 40;
-    state.indicators.macd = (Math.random() - 0.5) * 0.01;
-    state.indicators.stochK = Math.floor(Math.random() * 100);
-    state.indicators.stochD = Math.floor(Math.random() * 100);
-    state.indicators.ema5 = 0.5 + Math.random() * 0.1;
-    state.indicators.ema13 = 0.5 + Math.random() * 0.1;
-    state.indicators.volume = Math.floor(Math.random() * 10000);
+// Exibir sinal formatado
+function displaySignal(signal) {
+    const timeString = signal.timestamp.toLocaleTimeString();
     
-    // Gerar tendência
-    const trendRand = Math.random();
-    if (trendRand > 0.7) {
-        state.indicators.trend = "ALTA";
-        state.indicators.trendStrength = 60 + Math.floor(Math.random() * 40);
-    } else if (trendRand < 0.3) {
-        state.indicators.trend = "BAIXA";
-        state.indicators.trendStrength = 60 + Math.floor(Math.random() * 40);
+    console.log(`\n=== SINAL PARA CRYPTO IDX ===`);
+    console.log(`Hora: ${timeString}`);
+    console.log(`Sinal: ${signal.type}`);
+    console.log(`Confiança: ${signal.confidence}%`);
+    console.log('--- Indicadores ---');
+    console.log(`Tendência: ${state.indicators.trend} (${state.indicators.trendStrength}%)`);
+    console.log(`RSI: ${state.indicators.rsi.toFixed(1)}`);
+    console.log(`Estocástico: K=${state.indicators.stochK.toFixed(1)}, D=${state.indicators.stochD.toFixed(1)}`);
+    console.log(`EMA5: ${state.indicators.ema5.toFixed(2)}`);
+    console.log(`EMA13: ${state.indicators.ema13.toFixed(2)}`);
+    console.log(`Volume: ${state.indicators.volume.toLocaleString()}`);
+    console.log(`==============================\n`);
+}
+
+// Inicialização
+console.log("Iniciando robô para CRYPTO IDX");
+console.log("Configurações:");
+console.log(`- Ativo de referência: ${CONFIG.asset}`);
+console.log(`- Timeframe: ${CONFIG.timeframe}`);
+console.log(`- Confiança mínima: ${CONFIG.minConfidence}%`);
+console.log("----------------------------------------");
+
+// Função para ativar/desativar o robô via console
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (input) => {
+    const command = input.toString().trim().toLowerCase();
+    
+    if (command === 'on') {
+        state.active = true;
+        console.log("Robô ATIVADO");
+    } else if (command === 'off') {
+        state.active = false;
+        console.log("Robô DESATIVADO");
+    } else if (command === 'status') {
+        console.log(`Estado: ${state.active ? 'ATIVO' : 'INATIVO'}`);
+        console.log(`Último sinal: ${state.lastSignalTime ? state.lastSignalTime.toLocaleTimeString() : 'Nenhum'}`);
+    } else if (command === 'exit') {
+        console.log("Encerrando robô...");
+        process.exit();
     } else {
-        state.indicators.trend = "NEUTRA";
-        state.indicators.trendStrength = 30 + Math.floor(Math.random() * 40);
+        console.log("Comandos disponíveis:");
+        console.log("on   - Ativar robô");
+        console.log("off  - Desativar robô");
+        console.log("status - Ver estado atual");
+        console.log("exit - Sair do programa");
     }
-    
-    // Atualizar UI
-    updateIndicators();
-}
+});
 
-// Atualizar indicadores na UI
-function updateIndicators() {
-    elements.rsi.textContent = state.indicators.rsi.toFixed(1);
-    elements.macd.textContent = state.indicators.macd.toFixed(4);
-    elements.stoch.textContent = `${state.indicators.stochK.toFixed(0)}/${state.indicators.stochD.toFixed(0)}`;
-    elements.ema5.textContent = state.indicators.ema5.toFixed(4);
-    elements.ema13.textContent = state.indicators.ema13.toFixed(4);
-    elements.volume.textContent = state.indicators.volume.toLocaleString();
-    elements.trend.textContent = state.indicators.trend;
-    elements.strength.textContent = `${state.indicators.trendStrength}%`;
-    
-    // Colorir indicadores
-    elements.rsi.style.color = state.indicators.rsi > 70 ? '#e74c3c' : 
-                              state.indicators.rsi < 30 ? '#2ecc71' : '#3498db';
-    
-    elements.macd.style.color = state.indicators.macd > 0 ? '#2ecc71' : '#e74c3c';
-}
-
-// Simular mercado a cada 5 segundos
-setInterval(generateSignal, 5000);
-
-// Atualizar indicadores a cada segundo
-setInterval(simulateMarketData, 1000);
+console.log("\nComandos disponíveis: [on] [off] [status] [exit]\n");
