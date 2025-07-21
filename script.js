@@ -57,7 +57,8 @@ const state = {
   iaProbabilidade: 0,
   iaNivelRisco: 0,
   totalOperacoes: 0,
-  modoLateral: false
+  modoLateral: false,
+  ultimoSinalTimestamp: 0
 };
 
 const CONFIG = {
@@ -168,7 +169,10 @@ const calcularMedia = {
 };
 
 function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {
-  if (closes.length < periodo + 1) return 50;
+  if (closes.length < periodo + 1) {
+    state.rsiCache.initialized = false;
+    return 50;
+  }
   
   if (!state.rsiCache.initialized) {
     let gains = 0;
@@ -249,28 +253,17 @@ function calcularStochastic(highs, lows, closes, periodoK = CONFIG.PERIODOS.STOC
 function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA, lenta = CONFIG.PERIODOS.MACD_LENTA, sinal = CONFIG.PERIODOS.MACD_SINAL) {
   try {
     if (state.macdCache.emaRapida === null || state.macdCache.emaLenta === null) {
-      const emaRapida = calcularMedia.exponencial(closes, rapida);
-      const emaLenta = calcularMedia.exponencial(closes, lenta);
+      state.macdCache.emaRapida = calcularMedia.simples(closes.slice(-rapida), rapida);
+      state.macdCache.emaLenta = calcularMedia.simples(closes.slice(-lenta), lenta);
       
-      const startIdx = Math.max(emaRapida.length, emaLenta.length) - Math.min(emaRapida.length, emaLenta.length);
-      const macdLinha = [];
-      for (let i = startIdx; i < Math.min(emaRapida.length, emaLenta.length); i++) {
-        macdLinha.push(emaRapida[i] - emaLenta[i]);
-      }
-      
-      const sinalLinha = calcularMedia.exponencial(macdLinha, sinal);
-      
-      state.macdCache = {
-        emaRapida: emaRapida[emaRapida.length - 1],
-        emaLenta: emaLenta[emaLenta.length - 1],
-        macdLine: macdLinha,
-        signalLine: sinalLinha
-      };
+      const macdLinha = state.macdCache.emaRapida - state.macdCache.emaLenta;
+      state.macdCache.macdLine = [macdLinha];
+      state.macdCache.signalLine = [macdLinha];
       
       return {
-        histograma: macdLinha[macdLinha.length - 1] - sinalLinha[sinalLinha.length - 1],
-        macdLinha: macdLinha[macdLinha.length - 1],
-        sinalLinha: sinalLinha[sinalLinha.length - 1]
+        histograma: 0,
+        macdLinha: macdLinha,
+        sinalLinha: macdLinha
       };
     }
     
@@ -286,18 +279,14 @@ function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA, lenta = CONF
     const novaMacdLinha = state.macdCache.emaRapida - state.macdCache.emaLenta;
     state.macdCache.macdLine.push(novaMacdLinha);
     
-    if (state.macdCache.signalLine.length === 0) {
-      state.macdCache.signalLine.push(novaMacdLinha);
-    } else {
-      const ultimoSinal = state.macdCache.signalLine[state.macdCache.signalLine.length - 1];
-      const novoSignal = novaMacdLinha * kSinal + ultimoSinal * (1 - kSinal);
-      state.macdCache.signalLine.push(novoSignal);
-    }
+    const ultimoSinal = state.macdCache.signalLine[state.macdCache.signalLine.length - 1];
+    const novoSignal = novaMacdLinha * kSinal + ultimoSinal * (1 - kSinal);
+    state.macdCache.signalLine.push(novoSignal);
     
     return {
-      histograma: novaMacdLinha - state.macdCache.signalLine[state.macdCache.signalLine.length - 1],
+      histograma: novaMacdLinha - novoSignal,
       macdLinha: novaMacdLinha,
-      sinalLinha: state.macdCache.signalLine[state.macdCache.signalLine.length - 1]
+      sinalLinha: novoSignal
     };
   } catch (e) {
     console.error("Erro no cálculo MACD:", e);
@@ -371,71 +360,37 @@ function calcularSuperTrend(dados, periodo = CONFIG.PERIODOS.SUPERTREND, multipl
   }
 }
 
-function detectarDivergencias(closes, rsis, highs, lows) {
+function detectarDivergencias(closes, rsis) {
   try {
     const lookback = CONFIG.PERIODOS.DIVERGENCIA_LOOKBACK;
-    const extremeLookback = CONFIG.PERIODOS.EXTREME_LOOKBACK;
     
     if (closes.length < lookback || rsis.length < lookback) {
       return { divergenciaRSI: false, tipoDivergencia: "NENHUMA" };
     }
     
-    const findExtremes = (data, isHigh = true) => {
-      const extremes = [];
-      for (let i = extremeLookback; i < data.length - extremeLookback; i++) {
-        let isExtreme = true;
-        
-        for (let j = 1; j <= extremeLookback; j++) {
-          if (isHigh) {
-            if (data[i] <= data[i-j] || data[i] <= data[i+j]) {
-              isExtreme = false;
-              break;
-            }
-          } else {
-            if (data[i] >= data[i-j] || data[i] >= data[i+j]) {
-              isExtreme = false;
-              break;
-            }
-          }
-        }
-        
-        if (isExtreme) {
-          extremes.push({ index: i, value: data[i] });
-        }
-      }
-      return extremes;
-    };
+    const lastClose = closes.slice(-lookback);
+    const lastRsi = rsis.slice(-lookback);
     
-    const priceHighs = findExtremes(highs, true);
-    const priceLows = findExtremes(lows, false);
-    const rsiHighs = findExtremes(rsis, true);
-    const rsiLows = findExtremes(rsis, false);
+    const minClose = Math.min(...lastClose);
+    const maxClose = Math.max(...lastClose);
+    const minRsi = Math.min(...lastRsi);
+    const maxRsi = Math.max(...lastRsi);
+    
+    const idxMinClose = lastClose.indexOf(minClose);
+    const idxMaxClose = lastClose.indexOf(maxClose);
+    const idxMinRsi = lastRsi.indexOf(minRsi);
+    const idxMaxRsi = lastRsi.indexOf(maxRsi);
     
     let divergenciaRegularAlta = false;
     let divergenciaRegularBaixa = false;
     
-    if (priceHighs.length >= 2 && rsiHighs.length >= 2) {
-      const lastPriceHigh = priceHighs[priceHighs.length - 1];
-      const prevPriceHigh = priceHighs[priceHighs.length - 2];
-      const lastRsiHigh = rsiHighs[rsiHighs.length - 1];
-      const prevRsiHigh = rsiHighs[rsiHighs.length - 2];
-      
-      if (lastPriceHigh.value > prevPriceHigh.value && 
-          lastRsiHigh.value < prevRsiHigh.value) {
-        divergenciaRegularBaixa = true;
-      }
+    // Detecção simplificada de divergências
+    if (idxMinClose < idxMinRsi && minClose === lastClose[0] && minRsi !== lastRsi[0]) {
+      divergenciaRegularAlta = true;
     }
     
-    if (priceLows.length >= 2 && rsiLows.length >= 2) {
-      const lastPriceLow = priceLows[priceLows.length - 1];
-      const prevPriceLow = priceLows[priceLows.length - 2];
-      const lastRsiLow = rsiLows[rsiLows.length - 1];
-      const prevRsiLow = rsiLows[rsiLows.length - 2];
-      
-      if (lastPriceLow.value < prevPriceLow.value && 
-          lastRsiLow.value > prevRsiLow.value) {
-        divergenciaRegularAlta = true;
-      }
+    if (idxMaxClose < idxMaxRsi && maxClose === lastClose[0] && maxRsi !== lastRsi[0]) {
+      divergenciaRegularBaixa = true;
     }
     
     return {
@@ -513,7 +468,7 @@ function calcularBandasBollinger(closes, periodo = CONFIG.PERIODOS.BOLLINGER, de
 // DETECÇÃO DE TENDÊNCIA OTIMIZADA
 // =============================================
 function avaliarTendencia(ema5, ema13, ema50) {
-  if (ema5 === null || ema13 === null || ema50 === null) {
+  if ([ema5, ema13, ema50].some(v => v === null || isNaN(v))) {
     return { tendencia: "NEUTRA", forca: 0 };
   }
   
@@ -558,6 +513,11 @@ function detectarLateralidade(closes, periodo = CONFIG.PERIODOS.ANALISE_LATERAL,
 // FUNÇÕES PARA PREVENÇÃO DE FALSOS SINAIS
 // =============================================
 function validarSinal(sinal, indicadores) {
+  // Cooldown de 30 segundos entre sinais
+  if (Date.now() - state.ultimoSinalTimestamp < 30000) {
+    return false;
+  }
+  
   const confirmacoes = [];
   
   if (sinal === "CALL") {
@@ -586,7 +546,12 @@ function validarSinal(sinal, indicadores) {
     confirmacoes.push(indicadores.close < (indicadores.bandasBollinger.medio - bandaRange * 0.05));
   }
   
-  return confirmacoes.filter(Boolean).length >= confirmacoes.length * 0.7;
+  const isValid = confirmacoes.filter(Boolean).length >= confirmacoes.length * 0.7;
+  
+  // Atualizar timestamp se sinal for válido
+  if (isValid) state.ultimoSinalTimestamp = Date.now();
+  
+  return isValid;
 }
 
 function verificarTransicao() {
@@ -624,6 +589,23 @@ function atualizarVolatilidade(atrAtual, close) {
   } else {
     CONFIG.LIMIARES.RSI_OVERBOUGHT = 78;
     CONFIG.LIMIARES.RSI_OVERSOLD = 22;
+  }
+}
+
+// =============================================
+// LIMPEZA PERIÓDICA DE CACHES
+// =============================================
+function limparCachesPeriodicos() {
+  if (state.totalOperacoes % 100 === 0) {
+    state.rsiCache = { avgGain: 0, avgLoss: 0, initialized: false };
+    state.macdCache = {
+      emaRapida: null,
+      emaLenta: null,
+      macdLine: [],
+      signalLine: []
+    };
+    state.superTrendCache = [];
+    console.log("Caches limpos periodicamente");
   }
 }
 
@@ -771,6 +753,8 @@ async function analisarMercado() {
   state.leituraEmAndamento = true;
   
   try {
+    limparCachesPeriodicos();
+    
     const dados = await obterDadosTwelveData();
     state.dadosHistoricos = dados;
     
@@ -830,7 +814,7 @@ async function analisarMercado() {
       state.rsiHistory.push(calcularRSI(closes.slice(0, i+1)));
     }
     
-    const divergencias = detectarDivergencias(closes, state.rsiHistory, highs, lows);
+    const divergencias = detectarDivergencias(closes, state.rsiHistory);
     const tendencia = avaliarTendencia(ema5, ema13, ema50);
     const lateral = detectarLateralidade(closes);
 
@@ -977,6 +961,7 @@ async function obterDadosTwelveData() {
     if (errorCount >= 2) {
       currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
       errorCount = 0;
+      return obterDadosTwelveData(); // Retentativa com nova chave
     }
     
     throw e;
