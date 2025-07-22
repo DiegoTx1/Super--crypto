@@ -40,7 +40,7 @@ const CONFIG = {
     TWELVE_DATA: "https://api.twelvedata.com"
   },
   PARES: {
-    CRYPTO_IDX: "BTC/USD"  // Usando BTC como proxy para índice cripto
+    CRYPTO_IDX: "BTC/USD"
   },
   PERIODOS: {
     RSI: 9,
@@ -62,13 +62,14 @@ const CONFIG = {
   LIMIARES: {
     SCORE_ALTO: 85,
     SCORE_MEDIO: 70,
-    RSI_OVERBOUGHT: 75,    // Mais sensível para cripto
-    RSI_OVERSOLD: 25,      // Mais sensível para cripto
+    RSI_OVERBOUGHT: 75,
+    RSI_OVERSOLD: 25,
     STOCH_OVERBOUGHT: 85,
     STOCH_OVERSOLD: 15,
-    VARIACAO_LATERAL: 0.005,  // Aumentado para cripto
-    ATR_LIMIAR: 0.015,        // Aumentado para volatilidade cripto
-    LATERALIDADE_LIMIAR: 0.005
+    VARIACAO_LATERAL: 0.005,
+    ATR_LIMIAR: 0.015,
+    LATERALIDADE_LIMIAR: 0.005,
+    BREAKOUT_THRESHOLD: 0.03
   },
   PESOS: {
     RSI: 1.7,
@@ -76,7 +77,8 @@ const CONFIG = {
     TENDENCIA: 2.8,
     STOCH: 1.2,
     SUPERTREND: 1.9,
-    DIVERGENCIA: 2.0
+    DIVERGENCIA: 2.0,
+    VOLATILIDADE: 1.5
   }
 };
 
@@ -94,6 +96,10 @@ let errorCount = 0;
 // SISTEMA DE TENDÊNCIA OTIMIZADO PARA CRIPTO
 // =============================================
 function avaliarTendencia(ema5, ema13) {
+  if (ema5 === null || ema13 === null) {
+    return { tendencia: "NEUTRA", forca: 0 };
+  }
+  
   const diff = ema5 - ema13;
   const forca = Math.min(100, Math.abs(diff * 10000));
   
@@ -116,13 +122,17 @@ function avaliarTendencia(ema5, ema13) {
 // DETECÇÃO DE LATERALIDADE (AJUSTADO PARA CRIPTO)
 // =============================================
 function detectarLateralidade(closes, periodo = CONFIG.PERIODOS.ANALISE_LATERAL, limiar = CONFIG.LIMIARES.LATERALIDADE_LIMIAR) {
+  if (closes.length < periodo) return false;
+  
   const variacoes = [];
-  for (let i = 1; i < periodo; i++) {
-    if (closes.length - i - 1 < 0) break;
-    variacoes.push(Math.abs(closes[closes.length - i] - closes[closes.length - i - 1]));
+  const startIndex = Math.max(0, closes.length - periodo);
+  
+  for (let i = startIndex + 1; i < closes.length; i++) {
+    const variacao = Math.abs((closes[i] - closes[i - 1]) / closes[i - 1]);
+    variacoes.push(variacao);
   }
-  if (variacoes.length < periodo - 1) return false;
-  const mediaVariacao = calcularMedia.simples(variacoes, periodo-1);
+  
+  const mediaVariacao = variacoes.reduce((sum, val) => sum + val, 0) / variacoes.length;
   return mediaVariacao < limiar;
 }
 
@@ -130,10 +140,12 @@ function detectarLateralidade(closes, periodo = CONFIG.PERIODOS.ANALISE_LATERAL,
 // CÁLCULO DE SUPORTE/RESISTÊNCIA PARA CRIPTO
 // =============================================
 function calcularZonasPreco(dados, periodo = 50) {
-  if (dados.length < periodo) periodo = dados.length;
+  if (dados.length < 2) return { resistencia: 0, suporte: 0, pivot: 0 };
+  
   const slice = dados.slice(-periodo);
   const highs = slice.map(v => v.high);
   const lows = slice.map(v => v.low);
+  
   return {
     resistencia: Math.max(...highs),
     suporte: Math.min(...lows),
@@ -153,7 +165,8 @@ function gerarSinal(indicadores, divergencias, lateral) {
     emaCurta,
     emaMedia,
     superTrend,
-    tendencia
+    tendencia,
+    atr
   } = indicadores;
   
   // Cálculo de suporte/resistência
@@ -163,17 +176,23 @@ function gerarSinal(indicadores, divergencias, lateral) {
   
   // Priorizar tendência forte em cripto
   if (tendencia.forca > 80) {
-    if (tendencia.tendencia === "FORTE_ALTA" && close > emaCurta && macd.histograma > 0) {
+    if (tendencia.tendencia.includes("ALTA") && 
+        close > emaCurta && 
+        macd.histograma > 0 &&
+        superTrend.direcao > 0) {
       return "CALL";
     }
-    if (tendencia.tendencia === "FORTE_BAIXA" && close < emaCurta && macd.histograma < 0) {
+    if (tendencia.tendencia.includes("BAIXA") && 
+        close < emaCurta && 
+        macd.histograma < 0 &&
+        superTrend.direcao < 0) {
       return "PUT";
     }
   }
 
   // Breakout em criptomoedas
   const variacao = state.resistenciaKey - state.suporteKey;
-  const limiteBreakout = variacao * 0.05;  // Mais sensível para cripto
+  const limiteBreakout = variacao * CONFIG.LIMIARES.BREAKOUT_THRESHOLD;
   
   if (close > (state.resistenciaKey + limiteBreakout)) {
     return "CALL";
@@ -185,21 +204,29 @@ function gerarSinal(indicadores, divergencias, lateral) {
   
   // Divergências em RSI (muito importantes em cripto)
   if (divergencias.divergenciaRSI) {
-    if (divergencias.tipoDivergencia === "ALTA" && close > state.suporteKey) {
+    if (divergencias.tipoDivergencia === "ALTA" && 
+        close > state.suporteKey &&
+        stoch.k < CONFIG.LIMIARES.STOCH_OVERSOLD) {
       return "CALL";
     }
     
-    if (divergencias.tipoDivergencia === "BAIXA" && close < state.resistenciaKey) {
+    if (divergencias.tipoDivergencia === "BAIXA" && 
+        close < state.resistenciaKey &&
+        stoch.k > CONFIG.LIMIARES.STOCH_OVERBOUGHT) {
       return "PUT";
     }
   }
   
   // Condições específicas para cripto
-  if (rsi < 25 && close > emaMedia) {
+  if (rsi < CONFIG.LIMIARES.RSI_OVERSOLD && 
+      close > emaMedia && 
+      superTrend.direcao > 0) {
     return "CALL";
   }
   
-  if (rsi > 75 && close < emaMedia) {
+  if (rsi > CONFIG.LIMIARES.RSI_OVERBOUGHT && 
+      close < emaMedia && 
+      superTrend.direcao < 0) {
     return "PUT";
   }
   
@@ -220,10 +247,15 @@ function calcularScore(sinal, indicadores, divergencias) {
                   sinal === "PUT" && indicadores.close < indicadores.emaMedia ? 15 : 0,
     superTrend: sinal === "CALL" && indicadores.close > indicadores.superTrend.valor ? 10 :
                 sinal === "PUT" && indicadores.close < indicadores.superTrend.valor ? 10 : 0,
-    volatilidade: (indicadores.atr / indicadores.close) > 0.02 ? 10 : 0  // Bônus para alta volatilidade
+    volatilidade: (indicadores.atr / indicadores.close) > 0.02 ? 15 : 5
   };
   
   score += Object.values(fatores).reduce((sum, val) => sum + val, 0);
+  
+  // Penalizar lateralidade
+  if (state.contadorLaterais > 10) {
+    score = Math.max(0, score - 20);
+  }
   
   return Math.min(100, Math.max(0, score));
 }
@@ -318,22 +350,19 @@ function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {
     state.rsiCache.avgGain = gains / periodo;
     state.rsiCache.avgLoss = losses / periodo;
     state.rsiCache.initialized = true;
-    
-    const rs = state.rsiCache.avgLoss === 0 ? Infinity : state.rsiCache.avgGain / state.rsiCache.avgLoss;
-    return 100 - (100 / (1 + rs));
   }
   
   const diff = closes[closes.length - 1] - closes[closes.length - 2];
+  const gain = Math.max(0, diff);
+  const loss = Math.max(0, -diff);
   
-  if (diff > 0) {
-    state.rsiCache.avgGain = ((state.rsiCache.avgGain * (periodo - 1)) + diff) / periodo;
-    state.rsiCache.avgLoss = (state.rsiCache.avgLoss * (periodo - 1)) / periodo;
-  } else {
-    state.rsiCache.avgGain = (state.rsiCache.avgGain * (periodo - 1)) / periodo;
-    state.rsiCache.avgLoss = ((state.rsiCache.avgLoss * (periodo - 1)) - diff) / periodo;
-  }
+  state.rsiCache.avgGain = ((state.rsiCache.avgGain * (periodo - 1)) + gain) / periodo;
+  state.rsiCache.avgLoss = ((state.rsiCache.avgLoss * (periodo - 1)) + loss) / periodo;
   
-  const rs = state.rsiCache.avgLoss === 0 ? Infinity : state.rsiCache.avgGain / state.rsiCache.avgLoss;
+  const rs = state.rsiCache.avgLoss === 0 ? 
+    (state.rsiCache.avgGain > 0 ? Infinity : 1) : 
+    state.rsiCache.avgGain / state.rsiCache.avgLoss;
+    
   return 100 - (100 / (1 + rs));
 }
 
@@ -343,43 +372,24 @@ function calcularStochastic(highs, lows, closes,
   try {
     if (closes.length < periodoK) return { k: 50, d: 50 };
     
-    const kValues = [];
-    for (let i = periodoK - 1; i < closes.length; i++) {
-      const startIndex = Math.max(0, i - periodoK + 1);
-      const sliceHigh = highs.slice(startIndex, i + 1);
-      const sliceLow = lows.slice(startIndex, i + 1);
-      
-      if (sliceHigh.length === 0 || sliceLow.length === 0) {
-        kValues.push(50);
-        continue;
-      }
-      
-      const highestHigh = Math.max(...sliceHigh);
-      const lowestLow = Math.min(...sliceLow);
-      const range = highestHigh - lowestLow;
-      const k = range !== 0 ? ((closes[i] - lowestLow) / range) * 100 : 50;
-      kValues.push(k);
-    }
+    const i = closes.length - 1;
+    const startIndex = Math.max(0, i - periodoK + 1);
+    const sliceHigh = highs.slice(startIndex, i + 1);
+    const sliceLow = lows.slice(startIndex, i + 1);
     
-    const kSuavizado = [];
-    for (let i = periodoD - 1; i < kValues.length; i++) {
-      const startIndex = Math.max(0, i - periodoD + 1);
-      const slice = kValues.slice(startIndex, i + 1);
-      const mediaK = calcularMedia.simples(slice, periodoD) || 50;
-      kSuavizado.push(mediaK);
-    }
+    const highestHigh = Math.max(...sliceHigh);
+    const lowestLow = Math.min(...sliceLow);
+    const range = highestHigh - lowestLow;
+    const k = range !== 0 ? ((closes[i] - lowestLow) / range) * 100 : 50;
     
-    const dValues = [];
-    for (let i = periodoD - 1; i < kSuavizado.length; i++) {
-      const startIndex = Math.max(0, i - periodoD + 1);
-      const slice = kSuavizado.slice(startIndex, i + 1);
-      dValues.push(calcularMedia.simples(slice, periodoD) || 50);
-    }
+    // Calcular média móvel simples para %D
+    const kValues = state.stochCache?.kValues || [];
+    kValues.push(k);
+    if (kValues.length > periodoD) kValues.shift();
     
-    return {
-      k: kSuavizado[kSuavizado.length - 1] || 50,
-      d: dValues[dValues.length - 1] || 50
-    };
+    const d = calcularMedia.simples(kValues, Math.min(kValues.length, periodoD)) || 50;
+    
+    return { k, d };
   } catch (e) {
     console.error("Erro no cálculo Stochastic:", e);
     return { k: 50, d: 50 };
@@ -390,6 +400,11 @@ function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA,
                     lenta = CONFIG.PERIODOS.MACD_LENTA, 
                     sinal = CONFIG.PERIODOS.MACD_SINAL) {
   try {
+    if (closes.length < lenta) {
+      return { histograma: 0, macdLinha: 0, sinalLinha: 0 };
+    }
+
+    // Calcular EMAs se necessário
     if (state.macdCache.emaRapida === null || state.macdCache.emaLenta === null) {
       const emaRapida = calcularMedia.exponencial(closes, rapida);
       const emaLenta = calcularMedia.exponencial(closes, lenta);
@@ -398,42 +413,39 @@ function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA,
       const macdLinha = emaRapida.slice(startIdx).map((val, idx) => val - emaLenta[idx]);
       const sinalLinha = calcularMedia.exponencial(macdLinha, sinal);
       
-      const ultimoMACD = macdLinha[macdLinha.length - 1] || 0;
-      const ultimoSinal = sinalLinha[sinalLinha.length - 1] || 0;
-      
       state.macdCache = {
         emaRapida: emaRapida[emaRapida.length - 1],
         emaLenta: emaLenta[emaLenta.length - 1],
         macdLine: macdLinha,
         signalLine: sinalLinha
       };
-      
-      return {
-        histograma: ultimoMACD - ultimoSinal,
-        macdLinha: ultimoMACD,
-        sinalLinha: ultimoSinal
-      };
     }
     
+    // Atualizar EMAs com novo valor
+    const novoValor = closes[closes.length - 1];
     const kRapida = 2 / (rapida + 1);
     const kLenta = 2 / (lenta + 1);
-    const kSinal = 2 / (sinal + 1);
-    
-    const novoValor = closes[closes.length - 1];
     
     state.macdCache.emaRapida = novoValor * kRapida + state.macdCache.emaRapida * (1 - kRapida);
     state.macdCache.emaLenta = novoValor * kLenta + state.macdCache.emaLenta * (1 - kLenta);
     
+    // Calcular linha MACD
     const novaMacdLinha = state.macdCache.emaRapida - state.macdCache.emaLenta;
     state.macdCache.macdLine.push(novaMacdLinha);
     
+    // Calcular linha de sinal
     if (state.macdCache.signalLine.length === 0) {
       state.macdCache.signalLine.push(novaMacdLinha);
     } else {
+      const kSinal = 2 / (sinal + 1);
       const ultimoSinal = state.macdCache.signalLine[state.macdCache.signalLine.length - 1];
       const novoSignal = novaMacdLinha * kSinal + ultimoSinal * (1 - kSinal);
       state.macdCache.signalLine.push(novoSignal);
     }
+    
+    // Manter tamanhos controlados
+    if (state.macdCache.macdLine.length > 100) state.macdCache.macdLine.shift();
+    if (state.macdCache.signalLine.length > 100) state.macdCache.signalLine.shift();
     
     const ultimoMACD = novaMacdLinha;
     const ultimoSinal = state.macdCache.signalLine[state.macdCache.signalLine.length - 1];
@@ -453,6 +465,7 @@ function calcularATR(dados, periodo = CONFIG.PERIODOS.ATR) {
   try {
     if (!Array.isArray(dados) || dados.length < periodo + 1) return 0;
     
+    // Calcular True Ranges
     const trValues = [];
     for (let i = 1; i < dados.length; i++) {
       const tr = Math.max(
@@ -463,24 +476,28 @@ function calcularATR(dados, periodo = CONFIG.PERIODOS.ATR) {
       trValues.push(tr);
     }
     
-    return calcularMedia.simples(trValues.slice(-periodo), periodo);
+    // Calcular ATR
+    if (state.atrGlobal === 0) {
+      state.atrGlobal = calcularMedia.simples(trValues.slice(-periodo), periodo);
+    } else {
+      // Atualizar com método exponencial para eficiência
+      state.atrGlobal = (state.atrGlobal * (periodo - 1) + trValues[trValues.length - 1]) / periodo;
+    }
+    
+    return state.atrGlobal;
   } catch (e) {
     console.error("Erro no cálculo ATR:", e);
     return 0;
   }
 }
 
-function calcularSuperTrend(dados, periodo = CONFIG.PERIODOS.SUPERTREND, multiplicador = 3) {
+function calcularSuperTrend(dados, atr, periodo = CONFIG.PERIODOS.SUPERTREND, multiplicador = 3) {
   try {
-    if (dados.length < periodo) return { direcao: 0, valor: 0 };
-    
-    if (state.atrGlobal === 0) {
-      state.atrGlobal = calcularATR(dados, periodo);
-    }
+    if (dados.length < 2) return { direcao: 0, valor: 0 };
     
     const current = dados[dados.length - 1];
+    const prev = dados.length > 1 ? dados[dados.length - 2] : current;
     const hl2 = (current.high + current.low) / 2;
-    const atr = state.atrGlobal;
     
     const upperBand = hl2 + (multiplicador * atr);
     const lowerBand = hl2 - (multiplicador * atr);
@@ -492,7 +509,6 @@ function calcularSuperTrend(dados, periodo = CONFIG.PERIODOS.SUPERTREND, multipl
       superTrend = upperBand;
       direcao = 1;
     } else {
-      const prev = dados[dados.length - 2];
       const prevSuperTrend = state.superTrendCache[state.superTrendCache.length - 1];
       
       if (prev.close > prevSuperTrend.valor) {
@@ -505,6 +521,8 @@ function calcularSuperTrend(dados, periodo = CONFIG.PERIODOS.SUPERTREND, multipl
     }
     
     state.superTrendCache.push({ direcao, valor: superTrend });
+    if (state.superTrendCache.length > 50) state.superTrendCache.shift();
+    
     return { direcao, valor: superTrend };
     
   } catch (e) {
@@ -516,43 +534,36 @@ function calcularSuperTrend(dados, periodo = CONFIG.PERIODOS.SUPERTREND, multipl
 function detectarDivergencias(closes, rsis, highs, lows) {
   try {
     const lookback = CONFIG.PERIODOS.DIVERGENCIA_LOOKBACK;
-    const extremeLookback = CONFIG.PERIODOS.EXTREME_LOOKBACK;
     
     if (closes.length < lookback || rsis.length < lookback) {
       return { divergenciaRSI: false, tipoDivergencia: "NENHUMA" };
     }
     
-    const findExtremes = (data, isHigh = true) => {
+    // Encontrar máximos e mínimos
+    const findExtremes = (data, isHigh) => {
       const extremes = [];
-      for (let i = extremeLookback; i < data.length - extremeLookback; i++) {
-        let isExtreme = true;
-        
-        for (let j = 1; j <= extremeLookback; j++) {
-          if (isHigh) {
-            if (data[i] <= data[i-j] || data[i] <= data[i+j]) {
-              isExtreme = false;
-              break;
-            }
-          } else {
-            if (data[i] >= data[i-j] || data[i] >= data[i+j]) {
-              isExtreme = false;
-              break;
-            }
+      for (let i = 3; i < data.length - 3; i++) {
+        if (isHigh) {
+          if (data[i] > data[i-1] && data[i] > data[i-2] && 
+              data[i] > data[i+1] && data[i] > data[i+2]) {
+            extremes.push({ index: i, value: data[i] });
           }
-        }
-        
-        if (isExtreme) {
-          extremes.push({ index: i, value: data[i] });
+        } else {
+          if (data[i] < data[i-1] && data[i] < data[i-2] && 
+              data[i] < data[i+1] && data[i] < data[i+2]) {
+            extremes.push({ index: i, value: data[i] });
+          }
         }
       }
       return extremes;
     };
     
-    const priceHighs = findExtremes(highs, true);
-    const priceLows = findExtremes(lows, false);
+    const priceHighs = findExtremes(closes, true);
+    const priceLows = findExtremes(closes, false);
     const rsiHighs = findExtremes(rsis, true);
     const rsiLows = findExtremes(rsis, false);
     
+    // Verificar divergências regulares
     let divergenciaRegularAlta = false;
     let divergenciaRegularBaixa = false;
     
@@ -620,21 +631,27 @@ async function analisarMercado() {
     const ema5 = calcularEMA(closes, CONFIG.PERIODOS.EMA_CURTA);
     const ema13 = calcularEMA(closes, CONFIG.PERIODOS.EMA_MEDIA);
 
-    const superTrend = calcularSuperTrend(dados);
+    // Calcular ATR primeiro para usar em outros indicadores
+    const atr = calcularATR(dados);
+    const superTrend = calcularSuperTrend(dados, atr);
     const rsi = calcularRSI(closes);
     const stoch = calcularStochastic(highs, lows, closes);
     const macd = calcularMACD(closes);
-    const atr = calcularATR(dados);
     
     // Preencher histórico de RSI
-    state.rsiHistory = [];
-    for (let i = CONFIG.PERIODOS.RSI; i < closes.length; i++) {
-      state.rsiHistory.push(calcularRSI(closes.slice(0, i+1)));
+    if (state.rsiHistory.length === 0) {
+      state.rsiHistory = Array(CONFIG.PERIODOS.RSI).fill(50);
     }
+    state.rsiHistory.push(rsi);
+    if (state.rsiHistory.length > 100) state.rsiHistory.shift();
     
     const divergencias = detectarDivergencias(closes, state.rsiHistory, highs, lows);
     const tendencia = avaliarTendencia(ema5, ema13);
     const lateral = detectarLateralidade(closes);
+
+    // Atualizar contador de lateralidade
+    if (lateral) state.contadorLaterais++;
+    else state.contadorLaterais = Math.max(0, state.contadorLaterais - 1);
 
     state.tendenciaDetectada = tendencia.tendencia;
     state.forcaTendencia = tendencia.forca;
@@ -744,6 +761,7 @@ async function obterDadosTwelveData() {
     if (errorCount >= 2) {
       currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
       errorCount = 0;
+      console.log(`Alternando para API key: ${currentKeyIndex}`);
     }
     
     throw e;
@@ -857,11 +875,13 @@ function iniciarAplicativo() {
       background: linear-gradient(135deg, #00b894, #00cec9) !important; 
       color: white !important;
       box-shadow: 0 4px 20px rgba(0, 184, 148, 0.3);
+      animation: pulseCall 2s infinite;
     }
     .put { 
       background: linear-gradient(135deg, #ff7675, #d63031) !important; 
       color: white !important;
       box-shadow: 0 4px 20px rgba(255, 118, 117, 0.3);
+      animation: pulsePut 2s infinite;
     }
     .esperar { 
       background: linear-gradient(135deg, #0984e3, #6c5ce7) !important; 
@@ -877,6 +897,16 @@ function iniciarAplicativo() {
     }
     #comando {
       transition: all 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+    }
+    @keyframes pulseCall {
+      0% { box-shadow: 0 0 0 0 rgba(0, 184, 148, 0.5); }
+      70% { box-shadow: 0 0 0 10px rgba(0, 184, 148, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(0, 184, 148, 0); }
+    }
+    @keyframes pulsePut {
+      0% { box-shadow: 0 0 0 0 rgba(255, 118, 117, 0.5); }
+      70% { box-shadow: 0 0 0 10px rgba(255, 118, 117, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(255, 118, 117, 0); }
     }
   `;
   document.head.appendChild(style);
