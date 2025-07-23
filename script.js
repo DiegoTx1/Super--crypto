@@ -1,11 +1,12 @@
 // =============================================
 // CONFIGURAÇÕES GLOBAIS (ATUALIZADAS PARA CRYPTO IDX)
 // =============================================
-const fetch = require('node-fetch');
 const state = {
   ultimos: [],
+  timer: 60,
   ultimaAtualizacao: "",
   leituraEmAndamento: false,
+  intervaloAtual: null,
   tentativasErro: 0,
   ultimoSinal: null,
   ultimoScore: 0,
@@ -90,7 +91,7 @@ let currentKeyIndex = 0;
 let errorCount = 0;
 
 // =============================================
-// SISTEMA DE TENDÊNCIA OTIMIZADO
+// SISTEMA DE TENDÊNCIA OTIMIZADO PARA CRIPTO
 // =============================================
 function avaliarTendencia(ema5, ema13) {
   const diff = ema5 - ema13;
@@ -112,7 +113,7 @@ function avaliarTendencia(ema5, ema13) {
 }
 
 // =============================================
-// DETECÇÃO DE LATERALIDADE
+// DETECÇÃO DE LATERALIDADE (AJUSTADO PARA CRIPTO)
 // =============================================
 function detectarLateralidade(closes, periodo = CONFIG.PERIODOS.ANALISE_LATERAL, limiar = CONFIG.LIMIARES.LATERALIDADE_LIMIAR) {
   const variacoes = [];
@@ -126,7 +127,7 @@ function detectarLateralidade(closes, periodo = CONFIG.PERIODOS.ANALISE_LATERAL,
 }
 
 // =============================================
-// CÁLCULO DE SUPORTE/RESISTÊNCIA
+// CÁLCULO DE SUPORTE/RESISTÊNCIA PARA CRIPTO
 // =============================================
 function calcularZonasPreco(dados, periodo = 50) {
   if (dados.length < periodo) periodo = dados.length;
@@ -141,7 +142,7 @@ function calcularZonasPreco(dados, periodo = 50) {
 }
 
 // =============================================
-// GERADOR DE SINAIS
+// GERADOR DE SINAIS OTIMIZADO PARA CRIPTO
 // =============================================
 function gerarSinal(indicadores, divergencias, lateral) {
   const {
@@ -201,7 +202,7 @@ function gerarSinal(indicadores, divergencias, lateral) {
 }
 
 // =============================================
-// CALCULADOR DE CONFIANÇA
+// CALCULADOR DE CONFIANÇA PARA CRIPTO
 // =============================================
 function calcularScore(sinal, indicadores, divergencias) {
   let score = 65;
@@ -223,7 +224,20 @@ function calcularScore(sinal, indicadores, divergencias) {
 }
 
 // =============================================
-// INDICADORES TÉCNICOS
+// FUNÇÕES UTILITÁRIAS
+// =============================================
+function atualizarRelogio() {
+  const now = new Date();
+  state.ultimaAtualizacao = now.toLocaleTimeString("pt-BR", {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+  state.marketOpen = true;
+}
+
+// =============================================
+// INDICADORES TÉCNICOS (OTIMIZADOS PARA CRIPTO)
 // =============================================
 const calcularMedia = {
   simples: (dados, periodo) => {
@@ -281,7 +295,9 @@ function calcularRSI(closes, periodo = CONFIG.PERIODOS.RSI) {
   return 100 - (100 / (1 + rs));
 }
 
-function calcularStochastic(highs, lows, closes, periodoK = CONFIG.PERIODOS.STOCH_K, periodoD = CONFIG.PERIODOS.STOCH_D) {
+function calcularStochastic(highs, lows, closes, 
+                          periodoK = CONFIG.PERIODOS.STOCH_K, 
+                          periodoD = CONFIG.PERIODOS.STOCH_D) {
   try {
     if (closes.length < periodoK) return { k: 50, d: 50 };
     
@@ -328,7 +344,9 @@ function calcularStochastic(highs, lows, closes, periodoK = CONFIG.PERIODOS.STOC
   }
 }
 
-function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA, lenta = CONFIG.PERIODOS.MACD_LENTA, sinal = CONFIG.PERIODOS.MACD_SINAL) {
+function calcularMACD(closes, rapida = CONFIG.PERIODOS.MACD_RAPIDA, 
+                    lenta = CONFIG.PERIODOS.MACD_LENTA, 
+                    sinal = CONFIG.PERIODOS.MACD_SINAL) {
   try {
     if (state.macdCache.emaRapida === null || state.macdCache.emaLenta === null) {
       const emaRapida = calcularMedia.exponencial(closes, rapida);
@@ -532,7 +550,7 @@ function detectarDivergencias(closes, rsis, highs, lows) {
 }
 
 // =============================================
-// CORE DO SISTEMA
+// CORE DO SISTEMA (ATUALIZADO PARA CRYPTO IDX)
 // =============================================
 async function analisarMercado() {
   if (state.leituraEmAndamento) return;
@@ -602,11 +620,14 @@ async function analisarMercado() {
 
     state.ultimoSinal = sinal;
     state.ultimoScore = score;
-    state.ultimaAtualizacao = new Date().toLocaleTimeString("pt-BR");
+    atualizarRelogio();
 
-    console.log("=============================================");
-    console.log(`🕒 ${state.ultimaAtualizacao} | Sinal: ${sinal} (${score}%)`);
-    console.log(`📊 Tendência: ${state.tendenciaDetectada} (${state.forcaTendencia}%)`);
+    // Log de resultados
+    console.log("====================================");
+    console.log(`📈 Sinal: ${sinal} | 🔒 Confiança: ${score}%`);
+    console.log(`⏱️ Atualizado em: ${state.ultimaAtualizacao}`);
+    console.log("------------------------------------");
+    console.log(`💹 Tendência: ${state.tendenciaDetectada} (${state.forcaTendencia}%)`);
     console.log(`💰 Preço: ${indicadores.close.toFixed(2)}`);
     console.log(`📉 RSI: ${rsi.toFixed(2)} ${rsi < CONFIG.LIMIARES.RSI_OVERSOLD ? '🔻' : rsi > CONFIG.LIMIARES.RSI_OVERBOUGHT ? '🔺' : ''}`);
     console.log(`📊 MACD: ${macd.histograma > 0 ? '+' : ''}${macd.histograma.toFixed(4)} ${macd.histograma > 0 ? '🟢' : '🔴'}`);
@@ -617,7 +638,7 @@ async function analisarMercado() {
     console.log(`🚦 SuperTrend: ${superTrend.direcao > 0 ? 'ALTA' : 'BAIXA'} (${superTrend.valor.toFixed(2)})`);
     console.log(`⚡ Volatilidade (ATR): ${atr.toFixed(4)}`);
     console.log(`🔄 Lateral: ${lateral ? 'SIM' : 'NÃO'}`);
-    console.log("=============================================\n");
+    console.log("====================================");
 
     state.ultimos.unshift(`${state.ultimaAtualizacao} - ${sinal} (${score}%)`);
     if (state.ultimos.length > 8) state.ultimos.pop();
@@ -625,12 +646,11 @@ async function analisarMercado() {
     state.tentativasErro = 0;
   } catch (e) {
     console.error("Erro na análise:", e);
-    
     if (++state.tentativasErro > 3) {
-      console.error("Muitas tentativas com erro. Reiniciando em 10 segundos...");
+      console.error("Reiniciando sistema após múltiplas falhas...");
       setTimeout(() => {
-        console.log("Reiniciando...");
-        process.exit(1);
+        console.clear();
+        state.tentativasErro = 0;
       }, 10000);
     }
   } finally {
@@ -639,7 +659,7 @@ async function analisarMercado() {
 }
 
 // =============================================
-// API DE DADOS
+// FUNÇÕES DE DADOS (TWELVE DATA API)
 // =============================================
 async function obterDadosTwelveData() {
   try {
@@ -675,6 +695,7 @@ async function obterDadosTwelveData() {
     if (errorCount >= 2) {
       currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
       errorCount = 0;
+      console.log(`Alternando para chave API: ${currentKeyIndex + 1}`);
     }
     
     throw e;
@@ -682,14 +703,34 @@ async function obterDadosTwelveData() {
 }
 
 // =============================================
-// CONTROLE DE EXECUÇÃO
+// CONTROLE DE TEMPO
 // =============================================
-function iniciarProcesso() {
-  setInterval(() => {
-    analisarMercado();
-  }, 60000);
-
-  setTimeout(analisarMercado, 1000);
+function sincronizarTimer() {
+  clearInterval(state.intervaloAtual);
+  const agora = new Date();
+  const segundos = agora.getSeconds();
+  state.timer = 60 - segundos;
+  
+  state.intervaloAtual = setInterval(() => {
+    state.timer--;
+    
+    if (state.timer <= 0) {
+      clearInterval(state.intervaloAtual);
+      analisarMercado();
+      sincronizarTimer();
+    }
+  }, 1000);
 }
 
-iniciarProcesso();
+// =============================================
+// INICIALIZAÇÃO
+// =============================================
+function iniciar() {
+  console.log("Iniciando robô de trading CRYPTO IDX...");
+  setInterval(atualizarRelogio, 1000);
+  sincronizarTimer();
+  analisarMercado();
+}
+
+// Iniciar aplicação
+iniciar();
