@@ -94,8 +94,12 @@ let errorCount = 0;
 // SISTEMA DE TENDÊNCIA OTIMIZADO PARA FOREX
 // =============================================
 function avaliarTendencia(ema12, ema26, ema200) {
+  if (ema12 === null || ema26 === null) {
+    return { tendencia: "NEUTRA", forca: 0 };
+  }
+  
   const diffCurta = ema12 - ema26;
-  const diffLonga = ema12 - ema200;
+  const diffLonga = ema200 !== null ? ema12 - ema200 : 0;
   
   // Combinação de curto e longo prazo
   const forca = Math.min(100, 
@@ -643,15 +647,26 @@ async function analisarMercado() {
     const highs = dados.map(v => v.high);
     const lows = dados.map(v => v.low);
 
-    // Calcular EMAs
+    // Calcular EMAs com tratamento de erro
     const calcularEMA = (dados, periodo) => {
-      const emaArray = calcularMedia.exponencial(dados, periodo);
-      return emaArray[emaArray.length - 1];
+      try {
+        if (dados.length < periodo) return null;
+        const emaArray = calcularMedia.exponencial(dados, periodo);
+        return emaArray.length > 0 ? emaArray[emaArray.length - 1] : null;
+      } catch (e) {
+        console.error(`Erro ao calcular EMA${periodo}:`, e);
+        return null;
+      }
     };
 
     const ema12 = calcularEMA(closes, CONFIG.PERIODOS.EMA_CURTA);
     const ema26 = calcularEMA(closes, CONFIG.PERIODOS.EMA_MEDIA);
     const ema200 = calcularEMA(closes, CONFIG.PERIODOS.EMA_LONGA);
+
+    // Verificação crítica antes de prosseguir
+    if (ema12 === null || ema26 === null) {
+      throw new Error(`EMA12 ou EMA26 não puderam ser calculadas (${closes.length} velas)`);
+    }
 
     const superTrend = calcularSuperTrend(dados);
     const rsi = calcularRSI(closes);
@@ -707,15 +722,15 @@ async function analisarMercado() {
     if (criteriosElement) {
       criteriosElement.innerHTML = `
         <li>📊 Tendência: ${state.tendenciaDetectada} (${state.forcaTendencia}%)</li>
-        <li>💰 Preço: ${indicadores.close.toFixed(5)}</li>
-        <li>📉 RSI: ${rsi.toFixed(2)} ${rsi < CONFIG.LIMIARES.RSI_OVERSOLD ? '🔻' : rsi > CONFIG.LIMIARES.RSI_OVERBOUGHT ? '🔺' : ''}</li>
-        <li>📊 MACD: ${macd.histograma > 0 ? '+' : ''}${macd.histograma.toFixed(5)} ${macd.histograma > 0 ? '🟢' : '🔴'}</li>
-        <li>📈 Stochastic: ${stoch.k.toFixed(2)}/${stoch.d.toFixed(2)}</li>
-        <li>📌 Médias: EMA12 ${ema12.toFixed(5)} | EMA26 ${ema26.toFixed(5)} | EMA200 ${ema200.toFixed(5)}</li>
-        <li>📊 Suporte: ${state.suporteKey.toFixed(5)} | Resistência: ${state.resistenciaKey.toFixed(5)}</li>
+        <li>💰 Preço: ${indicadores.close ? indicadores.close.toFixed(5) : 'N/A'}</li>
+        <li>📉 RSI: ${rsi ? rsi.toFixed(2) : 'N/A'} ${rsi < CONFIG.LIMIARES.RSI_OVERSOLD ? '🔻' : rsi > CONFIG.LIMIARES.RSI_OVERBOUGHT ? '🔺' : ''}</li>
+        <li>📊 MACD: ${macd.histograma ? (macd.histograma > 0 ? '+' : '') + macd.histograma.toFixed(5) : 'N/A'} ${macd.histograma > 0 ? '🟢' : '🔴'}</li>
+        <li>📈 Stochastic: ${stoch.k ? stoch.k.toFixed(2) : 'N/A'}/${stoch.d ? stoch.d.toFixed(2) : 'N/A'}</li>
+        <li>📌 Médias: EMA12 ${ema12 ? ema12.toFixed(5) : 'N/A'} | EMA26 ${ema26 ? ema26.toFixed(5) : 'N/A'} | EMA200 ${ema200 ? ema200.toFixed(5) : 'N/A'}</li>
+        <li>📊 Suporte: ${state.suporteKey ? state.suporteKey.toFixed(5) : 'N/A'} | Resistência: ${state.resistenciaKey ? state.resistenciaKey.toFixed(5) : 'N/A'}</li>
         <li>⚠️ Divergência: ${divergencias.tipoDivergencia}</li>
-        <li>🚦 SuperTrend: ${superTrend.direcao > 0 ? 'ALTA' : 'BAIXA'} (${superTrend.valor.toFixed(5)})</li>
-        <li>⚡ Volatilidade (ATR): ${atr.toFixed(5)}</li>
+        <li>🚦 SuperTrend: ${superTrend.direcao ? (superTrend.direcao > 0 ? 'ALTA' : 'BAIXA') : 'N/A'} (${superTrend.valor ? superTrend.valor.toFixed(5) : 'N/A'})</li>
+        <li>⚡ Volatilidade (ATR): ${atr ? atr.toFixed(5) : 'N/A'}</li>
         <li>🔄 Lateral: ${lateral ? 'SIM' : 'NÃO'}</li>
       `;
     }
@@ -732,10 +747,12 @@ async function analisarMercado() {
     
     const criteriosElement = document.getElementById("criterios");
     if (criteriosElement) {
-      criteriosElement.innerHTML = `<li>ERRO: ${e.message}</li>`;
+      criteriosElement.innerHTML = `<li>ERRO: ${e.message || e}</li>`;
     }
     
-    if (++state.tentativasErro > 3) setTimeout(() => location.reload(), 10000);
+    if (++state.tentativasErro > 3) {
+      setTimeout(() => location.reload(), 10000);
+    }
   } finally {
     state.leituraEmAndamento = false;
   }
